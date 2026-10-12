@@ -14,3 +14,8 @@ export {
 export {
   collectClientSignals, detectDevtoolsProtocol, detectSoftwareRenderer, type ObservedInput
 } from './lib/utils/client-signals';
+export { provideIqbOidc, iqbOidcInterceptors } from './lib/oidc/provide-iqb-oidc';
+export { IQB_OIDC_OPTIONS, type IqbOidcOptions } from './lib/oidc/iqb-oidc-options';
+export { IqbOidcService, type IqbOidcIdentity } from './lib/oidc/iqb-oidc.service';
+export { iqbOidcUnauthorizedInterceptor } from './lib/oidc/iqb-oidc-unauthorized.interceptor';
+export { IQB_OIDC_OWN_UNAUTHORIZED } from './lib/oidc/iqb-oidc-options';

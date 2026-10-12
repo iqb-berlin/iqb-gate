@@ -9,7 +9,7 @@ front of an application as a reverse proxy and will offer, step by step:
    *(done)*
 3. **a page gate** in the manner of Anubis -- a proof-of-work page before the application loads *(done)*
 4. **OpenID Connect** -- login in the browser, Bearer tokens checked against the provider's JWKS
-   (`@iqb/gate-oidc`, `@iqb/gate-nest` for NestJS backends) *(in progress: verifier and audit done)*
+   (`@iqb/gate-oidc`, `@iqb/gate-nest` for NestJS backends, `provideIqbOidc` in the browser) *(done)*
 
 The gateway owns the paths below `/.iqb-gate/`; everything else goes to the application.
 
@@ -203,6 +203,34 @@ bootstrapApplication(AppComponent, {
   ]
 });
 ```
+
+**Logging in with OpenID Connect** -- as coding-box does with Keycloak, for any provider:
+
+```typescript
+provideIqbOidc({
+  issuer: 'https://login.example.org/realms/iqb',
+  clientId: 'studio',          // a public client with the code flow and PKCE
+  apiUrls: ['/api/']           // the access token goes to these, and nowhere else
+}),
+provideHttpClient(withInterceptors([...iqbOidcInterceptors(), iqbGateInterceptor]))
+```
+
+The browser logs in with the code flow and PKCE (`IqbOidcService.login()`), keeps the tokens and
+renews them with the refresh token; at the start of the application it takes over a login it comes
+back from (`?code=&state=`), and starts logged out should the provider fail or not answer within
+10 seconds. Each API URL has to end with `/`, so that the token cannot leak to a host that only
+begins alike.
+
+When an API refuses the token a request carried, the session is renewed once -- one renewal for all
+requests refused at once -- and the request repeated. Should that not help, the browser goes to the
+login, at most once in 30 seconds (kept across the page change, so an API that keeps refusing cannot
+send it back and forth), and comes back to the page it was on. A request whose 401 the application
+answers itself (a password it asks for) carries `IQB_OIDC_OWN_UNAUTHORIZED` in its `HttpContext` and
+keeps its 401. `IqbOidcService` gives `isAuthenticated$`, `identity$` (subject, username, e-mail, and
+the realm roles of the access token -- for the view; what they allow, the backend decides),
+`login()` and `logout()`, which drops the tokens and ends the provider's session even if they cannot
+be revoked. Built on `angular-auth-oidc-client`; the application needs `@angular/router`. The
+backends check the token with `@iqb/gate-nest` or `@iqb/gate-oidc`.
 
 Applications that register interceptors as classes use `IqbGateInterceptor` with
 `HTTP_INTERCEPTORS` instead. `isAutomationDetected(error)` recognises the gateway's 403, for a

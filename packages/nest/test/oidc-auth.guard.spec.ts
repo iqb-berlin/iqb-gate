@@ -96,16 +96,17 @@ describe('OidcAuthGuard', () => {
   });
 
   // The guard in a feature module has to apply the user sync of the root: whom it does not take stays out
-  it('puts the application\'s user on the request, in feature modules too, and keeps out whom it refuses', async () => {
+  // 403, not 401: a browser would take a 401 for an expired login and log in again
+  it('puts the application\'s user on the request, in feature modules too, and forbids whom it refuses', async () => {
     await start([withUsers(), FeatureModule]);
     expect(await (await read(await provider.sign())).json())
       .toEqual(expect.objectContaining({ user: { id: 7, name: 'anna' } }));
-    expect((await read(await provider.sign({ preferred_username: 'nobody' }))).status).toBe(401);
+    expect((await read(await provider.sign({ preferred_username: 'nobody' }))).status).toBe(403);
   });
 
   it('applies the user sync as global guard as well', async () => {
     await start([withUsers(), FeatureModule], [{ provide: APP_GUARD, useExisting: OidcAuthGuard }]);
-    expect((await read(await provider.sign({ preferred_username: 'nobody' }))).status).toBe(401);
+    expect((await read(await provider.sign({ preferred_username: 'nobody' }))).status).toBe(403);
     expect((await read(await provider.sign(), '/protected/unguarded')).status).toBe(200);
   });
 

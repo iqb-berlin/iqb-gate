@@ -140,9 +140,9 @@ export class AppModule {}
 me(@OidcIdentity() identity: OidcIdentityData, @Req() request: { user: User }) { ... }
 ```
 
-`OidcAuthGuard` answers 401 for a request without a token of the provider, or whose person the
-`userSync` does not take -- in every module and as global guard alike, as the module sets both up
-itself. `@OidcIdentity()` refuses a route the guard did not check. Only HTTP requests are let in. An
+`OidcAuthGuard` answers 401 for a request without a valid token of the provider, and 403 for a
+person the `userSync` does not take -- known, but not let in, so that the browser does not take it
+for an expired login. Alike in every module and as global guard, as the module sets both up itself. `@OidcIdentity()` refuses a route the guard did not check. Only HTTP requests are let in. An
 application that checks further tokens of its own in one strategy (coding-box: workspace tokens)
 injects the verifier as `OIDC_VERIFIER` there. The package is CommonJS, as Nest applications are,
 and needs Node 22.12 or later.

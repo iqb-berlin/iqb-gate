@@ -1,5 +1,5 @@
 import {
-  type CanActivate, type ExecutionContext, Inject, Injectable, UnauthorizedException
+  type CanActivate, type ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException
 } from '@nestjs/common';
 import type { OidcVerifier } from '@iqb/gate-oidc';
 import {
@@ -20,8 +20,10 @@ export function httpRequestOf(context: ExecutionContext): OidcRequest {
 /**
  * Lets an HTTP request in when its `Authorization: Bearer` token is one of the OpenID Connect
  * provider the module was set up with. Puts the identity on `request.oidcIdentity`, and -- when
- * the module was given a `userSync` -- the application's own user on `request.user`. Everything
- * else is 401, without saying why: the reason goes to the module's log.
+ * the module was given a `userSync` -- the application's own user on `request.user`. A request
+ * without a valid token is 401; a person the user sync refuses is 403 -- known, but not let in, so
+ * that a browser does not take it for an expired login and log in again. The reason of a 401 goes
+ * to the module's log.
  *
  * The verifier and the user sync come from `IqbOidcModule`, never from the module that uses the
  * guard: every use of it -- in a feature module, as global guard -- applies the same rules.
@@ -41,7 +43,7 @@ export class OidcAuthGuard implements CanActivate {
     request.oidcIdentity = identity;
     if (this.userSync) {
       const user = await this.userSync.sync(identity);
-      if (user === null || user === undefined) throw new UnauthorizedException();
+      if (user === null || user === undefined) throw new ForbiddenException();
       request.user = user;
     }
     return true;

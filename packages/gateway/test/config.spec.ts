@@ -19,6 +19,7 @@ describe('parseConfig', () => {
         enforce: true, rules: [], exempt: [], burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined
       },
       pageGate: { enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [] },
+      oidc: undefined,
       audit: { file: '/var/lib/iqb-gate/audit.sqlite', retentionDays: 90, key: undefined }
     });
   });

@@ -9,15 +9,16 @@
   },
   "workspaces": [
     "packages/protocol",
+    "packages/oidc",
     "packages/gateway",
     "packages/angular"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint .",
-    "pretest": "npm run build -w @iqb/gate-protocol",
+    "pretest": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc",
     "test": "npm test --workspaces --if-present",
-    "pretypecheck": "npm run build -w @iqb/gate-protocol",
+    "pretypecheck": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

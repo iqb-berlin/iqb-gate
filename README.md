@@ -9,7 +9,7 @@ front of an application as a reverse proxy and will offer, step by step:
    *(done)*
 3. **a page gate** in the manner of Anubis -- a proof-of-work page before the application loads *(done)*
 4. **OpenID Connect** -- login in the browser, Bearer tokens checked against the provider's JWKS
-   (`@iqb/gate-nest` for NestJS backends)
+   (`@iqb/gate-oidc`, `@iqb/gate-nest` for NestJS backends) *(in progress: verifier and audit done)*
 
 The gateway owns the paths below `/.iqb-gate/`; everything else goes to the application.
 
@@ -19,6 +19,7 @@ The gateway owns the paths below `/.iqb-gate/`; everything else goes to the appl
 |---|---|
 | `packages/gateway` | the reverse proxy (Node 24, Fastify), shipped as a Docker image |
 | `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types |
+| `packages/oidc` | `@iqb/gate-oidc`: checks OpenID Connect access tokens against the provider's keys (Node) |
 | `packages/angular` | `@iqb/gate-angular`: the browser half for Angular 20 and 21 applications |
 
 ## Running the gateway
@@ -96,6 +97,27 @@ the client left), outcome and observations. Identical rejections within a minute
 writer, rule, outcome and observations, whatever the path -- are folded into one entry with their
 count, also those of a client that keeps no cookie, so a script in a loop cannot flood the log. Read it at `/.iqb-gate/admin/` (the audit key as password, any user name) or as JSON
 at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as Bearer token).
+
+## Checking OpenID Connect tokens
+
+`@iqb/gate-oidc` checks the access tokens of one provider, framework-free, for the gateway and for
+backends:
+
+```typescript
+const verifier = new OidcVerifier({ issuer: 'https://login.example.org/realms/iqb', clientId: 'studio' });
+const identity = await verifier.verify(token); // OidcIdentity, or null for any token that does not hold
+```
+
+It finds the provider's keys through its discovery document (or `jwksUri`), keeps them and fetches
+them again for an unknown key id; it accepts asymmetric signatures only (no `none`, no shared
+secrets) and checks the issuer, the expiry, and -- when given -- that the client is named in `aud` or
+as `azp`, and the `audience`. `identity` holds issuer, subject, a username (`preferred_username`, else
+e-mail, else subject), e-mail, names and roles (Keycloak's realm and client roles). It never throws
+for a bad token; `onRejected` hears why.
+
+With an `oidc` section in its configuration, the gateway checks the Bearer token of every checked
+write that way and names the person in the audit log, marked as checked. It never decides about the
+write because of the token -- the application does.
 
 ## Pages only for browsers that do the work
 

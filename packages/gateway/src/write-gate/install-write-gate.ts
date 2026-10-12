@@ -5,8 +5,9 @@ import { DAY_MS, HOUR_MS, MINUTE_MS } from '../time.js';
 import { registerAuditRoutes } from '../audit/audit-routes.js';
 import { WriteGate } from './write-gate.js';
 import type { GatePreHandler } from '../gate-pre-handler.js';
-import { registerChallengeRoutes, writeGatePreHandler } from './write-gate-routes.js';
+import { type PendingEntries, registerChallengeRoutes, writeGatePreHandler } from './write-gate-routes.js';
 import { RateLimit } from '../rate-limit.js';
+import { OidcVerifier } from '@iqb/gate-oidc';
 
 /** Challenges per client address and minute: enough for a school or office behind one address. */
 const CHALLENGES_PER_ADDRESS_AND_MINUTE = 30;
@@ -41,12 +42,22 @@ export function installWriteGate(gateway: FastifyInstance, config: GatewayConfig
     }, HOUR_MS)
   ];
   timers.forEach(timer => timer.unref());
+  const pending: PendingEntries = new Set();
   gateway.addHook('onClose', async () => {
     timers.forEach(timer => clearInterval(timer));
+    // Entries whose writer is still being named are written before the log closes
+    await Promise.allSettled([...pending]);
     audit.addRepeats();
     audit.close();
   });
 
+  // Tokens of the provider name their person in the audit log; a refused one is only worth a debug line
+  const verifier = config.oidc && new OidcVerifier({
+    ...config.oidc,
+    onRejected: reason => gateway.log.debug(`audit: token not verified: ${reason}`),
+    onUnavailable: reason => gateway.log.warn(`audit: the OpenID Connect provider cannot be asked: ${reason}`)
+  });
+
   gateway.log.info(`writes are checked: ${config.writeGate.rules.map(rule => rule.name).join(', ')}`);
-  return writeGatePreHandler(config.writeGate, writeGate, audit);
+  return writeGatePreHandler(config.writeGate, writeGate, audit, verifier, pending);
 }

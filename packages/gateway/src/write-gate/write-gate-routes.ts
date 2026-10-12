@@ -16,7 +16,8 @@ import { checkedWrite } from './write-check.js';
 import { readSession, startSession } from './gate-session.js';
 import type { RateLimit } from '../rate-limit.js';
 import { answerChallenge } from '../challenge-route.js';
-import { unverifiedBearerClaim } from './unverified-claim.js';
+import type { OidcVerifier } from '@iqb/gate-oidc';
+import { nameWriter } from './writer.js';
 
 /** The status recorded for a client that went away before its answer was sent (nginx's convention). */
 const CLIENT_CLOSED_REQUEST = 499;
@@ -81,7 +82,19 @@ export function registerChallengeRoutes(
  * its answer is final -- whether the application answered, failed, or the gateway rejected it, and
  * also when the client left before (499). Everything else passes untouched. The body is not read.
  */
-export function writeGatePreHandler(config: WriteGateConfig, writeGate: WriteGate, audit: AuditLog) {
+/**
+ * The audit entries still waiting for their writer to be named -- the gateway closes the log only
+ * once they are written.
+ */
+export type PendingEntries = Set<Promise<void>>;
+
+export function writeGatePreHandler(
+  config: WriteGateConfig,
+  writeGate: WriteGate,
+  audit: AuditLog,
+  verifier: OidcVerifier | undefined,
+  pending: PendingEntries
+) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | undefined> => {
     const write = checkedWrite(config, {
       method: request.method, url: request.url, authorization: request.headers.authorization
@@ -91,21 +104,29 @@ export function writeGatePreHandler(config: WriteGateConfig, writeGate: WriteGat
     const presented = readSession(request);
     const sessionId = presented ?? startSession(request, reply);
     const assessment = writeGate.assess({ sessionId, signalsHeader: request.headers[CLIENT_SIGNALS_HEADER] });
+    // Started now, alongside the write, so that the write does not wait for the provider's keys
+    const writer = nameWriter(request.headers.authorization, verifier, config.userClaim);
     let recorded = false;
     const record = () => {
       if (recorded) return;
       recorded = true;
-      audit.record({
+      // The entry keeps when the answer was final, not when the writer was named
+      const now = Date.now();
+      const statusCode = reply.raw.writableFinished ? reply.raw.statusCode : CLIENT_CLOSED_REQUEST;
+      const entry = writer.then(({ user, userVerified }) => audit.record({
         sessionId: presented,
-        user: config.userClaim ? unverifiedBearerClaim(request.headers.authorization, config.userClaim) : null,
+        user,
+        userVerified,
         method: request.method,
         path: write.path,
         rule: write.rule,
-        statusCode: reply.raw.writableFinished ? reply.raw.statusCode : CLIENT_CLOSED_REQUEST,
+        statusCode,
         outcome: assessment.outcome,
         blockingSignals: assessment.blockingSignals,
         loggedSignals: assessment.loggedSignals
-      });
+      }, now), error => request.log.error({ err: error }, 'naming the writer for the audit log failed'));
+      pending.add(entry);
+      entry.finally(() => pending.delete(entry));
     };
     reply.raw.once('finish', record);
     reply.raw.once('close', record);

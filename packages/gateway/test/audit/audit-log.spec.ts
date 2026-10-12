@@ -4,6 +4,7 @@ import {
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { AuditLog, type AuditRecord } from '../../src/audit/audit-log.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -11,6 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const write = (changes: Partial<AuditRecord> = {}): AuditRecord => ({
   sessionId: 's1',
   user: 'anna',
+  userVerified: false,
   method: 'PATCH',
   path: '/api/admin/users/3',
   rule: 'administration',
@@ -57,6 +59,33 @@ describe('AuditLog', () => {
       expect(() => log.record(write())).not.toThrow();
       expect(onError).toHaveBeenCalledWith('Writing the audit entry of a write failed.', expect.any(Error));
       log = new AuditLog(':memory:', 90 * DAY_MS, onError);
+    });
+
+    it('keeps whether the writer was verified', () => {
+      log.record(write({ userVerified: true }), 1000);
+      expect(log.find()[0].userVerified).toBe(true);
+    });
+
+    // A log written before the gateway verified tokens has no such column yet
+    it('adds what an older log file lacks, keeping its entries', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'iqb-gate-audit-'));
+      const file = join(directory, 'audit.sqlite');
+      const old = new DatabaseSync(file);
+      old.exec(`CREATE TABLE write_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, session_id TEXT, user TEXT,
+        method TEXT NOT NULL, path TEXT NOT NULL, rule TEXT NOT NULL, status_code INTEGER NOT NULL,
+        outcome TEXT NOT NULL, repeated INTEGER NOT NULL DEFAULT 0, blocking_signals TEXT NOT NULL,
+        logged_signals TEXT NOT NULL)`);
+      old.exec(`INSERT INTO write_audit (created_at, session_id, user, method, path, rule, status_code, outcome,
+        blocking_signals, logged_signals) VALUES (1, 's0', 'old', 'PUT', '/api/admin/x', 'administration', 200,
+        'allowed', '[]', '[]')`);
+      old.close();
+
+      const migrated = new AuditLog(file, 90 * DAY_MS, onError);
+      migrated.record(write({ userVerified: true }), 2000);
+      expect(migrated.find().map(entry => [entry.user, entry.userVerified])).toEqual([['anna', true], ['old', false]]);
+      migrated.close();
+      rmSync(directory, { recursive: true });
     });
 
     it('keeps its entries in the file across a restart', () => {

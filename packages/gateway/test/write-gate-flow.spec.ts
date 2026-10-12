@@ -9,9 +9,13 @@ import {
 } from '@iqb/gate-protocol';
 import { buildGateway } from '../src/gateway.js';
 import type { GatewayConfig } from '../src/config.js';
-import type { AuditEntry } from '../src/audit/audit-log.js';
+import { AuditLog, type AuditEntry } from '../src/audit/audit-log.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { compilePattern } from '../src/config-helpers.js';
 import { testConfig } from './support/test-config.js';
+import { FakeProvider, foreignToken } from '@iqb/gate-oidc/testing';
 import { STREAM_BODY } from './support/stream-body.js';
 import { solvedPayload } from './support/solve-challenge.js';
 
@@ -374,5 +378,90 @@ describe('the write gate', () => {
       expect((await fetch(`${url}/.iqb-gate/admin/`)).status).toBe(404);
       await started.close();
     });
+  });
+});
+
+describe('the write gate with an OpenID Connect provider', () => {
+  const provider = new FakeProvider();
+  let upstream: Server;
+  let gateway: FastifyInstance;
+  let base: string;
+
+  beforeAll(async () => {
+    await provider.start();
+    upstream = await startUpstream();
+    gateway = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
+      writeGate: {
+        enforce: true, burst: { limit: 30, windowSeconds: 60 }, userClaim: 'preferred_username', ...STUDIO_LITE_RULES
+      },
+      oidc: { issuer: provider.issuer, clientId: 'studio' },
+      audit: { file: ':memory:', retentionDays: 90, key: AUDIT_KEY }
+    }), false);
+    await gateway.listen({ host: '127.0.0.1', port: 0 });
+    base = origin(gateway.server.address() as AddressInfo);
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+    await new Promise(resolve => { upstream.close(resolve); });
+    await provider.stop();
+  });
+
+  const entriesFor = async (path: string): Promise<AuditEntry[]> => {
+    const response = await fetch(`${base}/.iqb-gate/admin/audit`, {
+      headers: { authorization: `Bearer ${AUDIT_KEY}` }
+    });
+    return (await response.json() as AuditEntry[]).filter(entry => entry.path === path);
+  };
+
+  it('names the writer of a token the provider signed as verified, and any other as not', async () => {
+    await fetch(`${base}/api/admin/users/1`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${await provider.sign()}` }, body: '{}'
+    });
+    // A forged token may name anyone; the log says it was not checked
+    const forged = await foreignToken(provider.issuer, { preferred_username: 'anna' });
+    await fetch(`${base}/api/admin/users/2`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${forged}` }, body: '{}'
+    });
+    await vi.waitFor(async () => {
+      expect(await entriesFor('/api/admin/users/1')).toEqual([
+        expect.objectContaining({ user: 'anna', userVerified: true, statusCode: 403 })
+      ]);
+      expect(await entriesFor('/api/admin/users/2')).toEqual([
+        expect.objectContaining({ user: 'anna', userVerified: false, statusCode: 403 })
+      ]);
+    });
+  });
+});
+
+describe('the write gate closing', () => {
+  it('writes the entries whose writer is still being named before the log closes', async () => {
+    // A provider that answers its discovery late: the writer is still being named when the gateway closes
+    const slow = createServer((_request, response) => {
+      setTimeout(() => response.writeHead(503).end(), 500);
+    });
+    await new Promise<void>(resolve => { slow.listen(0, '127.0.0.1', () => resolve()); });
+    const upstream = await startUpstream();
+    const directory = mkdtempSync(join(tmpdir(), 'iqb-gate-close-'));
+    const file = join(directory, 'audit.sqlite');
+    const gateway = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
+      writeGate: { enforce: true, burst: { limit: 30, windowSeconds: 60 }, userClaim: 'sub', ...STUDIO_LITE_RULES },
+      oidc: { issuer: `http://127.0.0.1:${(slow.address() as AddressInfo).port}/realms/iqb` },
+      audit: { file, retentionDays: 90, key: undefined }
+    }), false);
+
+    await gateway.listen({ host: '127.0.0.1', port: 0 });
+    const response = await fetch(`${origin(gateway.server.address() as AddressInfo)}/api/admin/users/1`, {
+      method: 'PATCH', headers: { authorization: bearer('closing') }, body: '{}'
+    });
+    expect(response.status).toBe(403);
+    await gateway.close();
+
+    const reopened = new AuditLog(file, 90 * 24 * 60 * 60 * 1000, () => {});
+    expect(reopened.find()).toEqual([expect.objectContaining({ path: '/api/admin/users/1', statusCode: 403 })]);
+    reopened.close();
+    await new Promise(resolve => { upstream.close(resolve); });
+    await new Promise(resolve => { slow.close(resolve); });
+    rmSync(directory, { recursive: true });
   });
 });

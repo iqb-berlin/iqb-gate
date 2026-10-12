@@ -44,3 +44,10 @@ pageGate:
   policy:
     - { name: ai-crawlers, userAgent: '(GPTBot|CCBot|ClaudeBot|Bytespider|PerplexityBot)', action: deny }
     - { name: uptime, userAgent: '^UptimeRobot/', path: '^/$', action: allow }
+
+# The OpenID Connect provider whose tokens name the writers in the audit log, as checked ("geprüft").
+# Without it, a writer is named by writeGate.userClaim from the token, unchecked. The gateway never
+# lets a write through or keeps it out because of a token; the application decides that.
+# oidc:
+#   issuer: https://login.example.org/realms/iqb
+#   clientId: studio

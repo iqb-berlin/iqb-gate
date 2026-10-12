@@ -41,8 +41,9 @@ export const AUDIT_PAGE = `<!doctype html>
 </head>
 <body>
 <h1>Schreibzugriffe</h1>
-<p class="hint">Alle geprüften Schreibzugriffe, die neuesten zuerst. Der Nutzer stammt ungeprüft aus dem Token der
-Anfrage; verlässlich ist er nur bei einem Status 2xx &ndash; dann hat die Anwendung das Token angenommen.</p>
+<p class="hint">Alle geprüften Schreibzugriffe, die neuesten zuerst. Ein Nutzer mit &#10003; stammt aus einem Token,
+das das Gateway beim Anmeldedienst geprüft hat. Ohne &#10003; stammt er ungeprüft aus dem Token der Anfrage;
+verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung das Token angenommen.</p>
 <form id="filter">
   <label>Von <input type="date" name="from"></label>
   <label>Bis <input type="date" name="to"></label>
@@ -77,6 +78,12 @@ Anfrage; verlässlich ist er nur bei einem Status 2xx &ndash; dann hat die Anwen
     return td;
   }
 
+  function userCell(entry) {
+    const td = cell(entry.user ? entry.user + (entry.userVerified ? ' \u2713' : '') : '–');
+    if (entry.user) td.title = entry.userVerified ? 'beim Anmeldedienst geprüft' : 'ungeprüft';
+    return td;
+  }
+
   function signalsCell(entry) {
     const td = document.createElement('td');
     entry.blockingSignals.forEach(signal => {
@@ -94,7 +101,7 @@ Anfrage; verlässlich ist er nur bei einem Status 2xx &ndash; dann hat die Anwen
     const outcome = (OUTCOMES[entry.outcome] || entry.outcome) + (entry.repeated ? ' (+' + entry.repeated + ')' : '');
     tr.append(
       cell(new Date(entry.createdAt).toLocaleString('de-DE')),
-      cell(entry.user || '–'),
+      userCell(entry),
       cell(entry.method),
       cell(entry.path, 'path'),
       cell(entry.rule),

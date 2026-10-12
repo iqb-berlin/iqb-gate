@@ -1,0 +1,38 @@
+{
+  "name": "@iqb/gate-oidc",
+  "version": "0.0.0",
+  "description": "Checks OpenID Connect access tokens against the provider's keys, for the iqb-gate gateway and NestJS backends",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/fake-provider.d.ts",
+      "default": "./dist/testing/fake-provider.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  }
+}

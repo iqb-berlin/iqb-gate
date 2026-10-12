@@ -3,13 +3,17 @@ FROM node:24.20.0-alpine AS build
 WORKDIR /build
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/protocol/package.json packages/protocol/
+COPY packages/oidc/package.json packages/oidc/
 COPY packages/gateway/package.json packages/gateway/
-RUN npm ci --workspace @iqb/gate-protocol --workspace @iqb/gate-gateway --include-workspace-root
+RUN npm ci --workspace @iqb/gate-protocol --workspace @iqb/gate-oidc --workspace @iqb/gate-gateway \
+  --include-workspace-root
 COPY packages/protocol packages/protocol
+COPY packages/oidc packages/oidc
 COPY packages/gateway packages/gateway
 RUN npm run build --workspace @iqb/gate-protocol \
+ && npm run build --workspace @iqb/gate-oidc \
  && npm run build --workspace @iqb/gate-gateway \
- && npm ci --workspace @iqb/gate-protocol --workspace @iqb/gate-gateway --omit=dev
+ && npm ci --workspace @iqb/gate-protocol --workspace @iqb/gate-oidc --workspace @iqb/gate-gateway --omit=dev
 
 FROM node:24.20.0-alpine
 ENV NODE_ENV=production
@@ -18,6 +22,8 @@ WORKDIR /app
 COPY --from=build /build/node_modules node_modules
 COPY --from=build /build/packages/protocol/package.json packages/protocol/
 COPY --from=build /build/packages/protocol/dist packages/protocol/dist
+COPY --from=build /build/packages/oidc/package.json packages/oidc/
+COPY --from=build /build/packages/oidc/dist packages/oidc/dist
 COPY --from=build /build/packages/gateway/package.json packages/gateway/
 COPY --from=build /build/packages/gateway/dist packages/gateway/dist
 # The audit log of checked writes

@@ -10,8 +10,12 @@ export interface AuditRecord {
    * together, so a script in a loop cannot flood the log by never keeping its cookie.
    */
   sessionId: string | null;
-  /** Who the application was told writes -- an unverified claim, see `unverifiedBearerClaim`. */
+  /**
+   * Who writes: the name in an OpenID Connect token the gateway verified, or else a claim of the
+   * Bearer JWT that nobody checked (see `unverifiedBearerClaim`) -- which {@link userVerified} tells.
+   */
   user: string | null;
+  userVerified: boolean;
   method: string;
   /** The path without the query. */
   path: string;
@@ -44,6 +48,7 @@ interface AuditRow {
   created_at: number;
   session_id: string | null;
   user: string | null;
+  user_verified: number;
   method: string;
   path: string;
   rule: string;
@@ -65,6 +70,7 @@ const SCHEMA = `
     created_at INTEGER NOT NULL,
     session_id TEXT,
     user TEXT,
+    user_verified INTEGER NOT NULL DEFAULT 0,
     method TEXT NOT NULL,
     path TEXT NOT NULL,
     rule TEXT NOT NULL,
@@ -83,6 +89,7 @@ function toEntry(row: AuditRow): AuditEntry {
     createdAt: new Date(row.created_at).toISOString(),
     sessionId: row.session_id,
     user: row.user,
+    userVerified: row.user_verified === 1,
     method: row.method,
     path: row.path,
     rule: row.rule,
@@ -121,12 +128,23 @@ export class AuditLog {
     // not wait for the disk on every entry -- the event loop that serves all traffic would wait too
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
     this.db.exec(SCHEMA);
+    this.addMissingColumns();
     this.insert = this.db.prepare(`
       INSERT INTO write_audit (
-        created_at, session_id, user, method, path, rule, status_code, outcome, blocking_signals, logged_signals
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, session_id, user, user_verified, method, path, rule, status_code, outcome,
+        blocking_signals, logged_signals
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.increment = this.db.prepare('UPDATE write_audit SET repeated = repeated + ? WHERE id = ?');
+  }
+
+  /** A log file from before a column existed gets it, with its default for the old entries. */
+  private addMissingColumns(): void {
+    const columns = (this.db.prepare('PRAGMA table_info(write_audit)').all() as Array<{ name: string }>)
+      .map(column => column.name);
+    if (!columns.includes('user_verified')) {
+      this.db.exec('ALTER TABLE write_audit ADD COLUMN user_verified INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   record(entry: AuditRecord, now = Date.now()): void {
@@ -134,8 +152,8 @@ export class AuditLog {
     if (kind && this.rejections.isRepeat(kind, now)) return;
     try {
       const result = this.insert.run(
-        now, entry.sessionId, entry.user, entry.method, entry.path, entry.rule, entry.statusCode, entry.outcome,
-        JSON.stringify(entry.blockingSignals), JSON.stringify(entry.loggedSignals)
+        now, entry.sessionId, entry.user, entry.userVerified ? 1 : 0, entry.method, entry.path, entry.rule,
+        entry.statusCode, entry.outcome, JSON.stringify(entry.blockingSignals), JSON.stringify(entry.loggedSignals)
       );
       if (kind) this.rejections.opened(kind, Number(result.lastInsertRowid), now);
     } catch (error) {
@@ -150,7 +168,7 @@ export class AuditLog {
    */
   private static kindOf(entry: AuditRecord): string {
     return JSON.stringify([
-      entry.sessionId, entry.user, entry.method, entry.rule, entry.outcome, entry.statusCode,
+      entry.sessionId, entry.user, entry.userVerified, entry.method, entry.rule, entry.outcome, entry.statusCode,
       entry.blockingSignals, entry.loggedSignals
     ]);
   }

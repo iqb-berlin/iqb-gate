@@ -6,6 +6,7 @@ import {
 } from './config-helpers.js';
 import { parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
 import { type PageGateConfig, parsePageGate } from './page-gate/page-gate-config.js';
+import { type OidcConfig, parseOidc } from './oidc-config.js';
 
 export { ConfigError, GATE_PREFIX };
 
@@ -39,6 +40,8 @@ export interface GatewayConfig {
   secret: string;
   writeGate: WriteGateConfig;
   pageGate: PageGateConfig;
+  /** The provider whose tokens name the writers in the audit log; without it, they go unverified. */
+  oidc: OidcConfig | undefined;
   audit: AuditConfig;
 }
 
@@ -141,7 +144,7 @@ function parseFile(yamlText: string | undefined): Record<string, unknown> {
   const file: unknown = yamlText ? parse(yamlText) : null;
   if (file === null || file === undefined) return {};
   if (!isMapping(file)) throw new ConfigError('The configuration file has to be a mapping.');
-  rejectUnknownKeys(file, ['timeouts', 'writeGate', 'pageGate'], 'The configuration file');
+  rejectUnknownKeys(file, ['timeouts', 'writeGate', 'pageGate', 'oidc'], 'The configuration file');
   return file;
 }
 
@@ -202,6 +205,7 @@ export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayCo
     ),
     writeGate,
     pageGate,
+    oidc: parseOidc(file.oidc),
     audit: {
       file: env.IQB_GATE_AUDIT_FILE || DEFAULT_AUDIT_FILE,
       retentionDays: parseRetentionDays(env.IQB_GATE_AUDIT_RETENTION_DAYS),

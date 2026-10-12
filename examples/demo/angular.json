@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "cli": { "analytics": false },
+  "projects": {
+    "demo": {
+      "projectType": "application",
+      "root": "",
+      "sourceRoot": "src",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/demo",
+            "index": "src/index.html",
+            "browser": "src/main.ts",
+            "tsConfig": "tsconfig.json",
+            "styles": ["@angular/material/prebuilt-themes/azure-blue.css", "src/styles.scss"],
+            "preserveSymlinks": true
+          },
+          "configurations": {
+            "development": { "optimization": false, "sourceMap": true }
+          },
+          "defaultConfiguration": "development"
+        }
+      }
+    }
+  }
+}

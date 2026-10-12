@@ -1,0 +1,41 @@
+{
+  "realm": "iqb-demo",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "editor", "description": "May save notes in the demo" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "iqb-gate-demo",
+      "name": "iqb-gate demo",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://localhost:8088/*"],
+      "webOrigins": ["http://localhost:8088"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8088/*"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "anna",
+      "firstName": "Anna",
+      "lastName": "Arendt",
+      "email": "anna@example.org",
+      "emailVerified": true,
+      "enabled": true,
+      "realmRoles": ["editor", "default-roles-iqb-demo"],
+      "credentials": [{ "type": "password", "value": "anna", "temporary": false }]
+    }
+  ]
+}

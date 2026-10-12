@@ -1,0 +1,21 @@
+<main class="demo">
+  <h1>iqb-gate Demo</h1>
+  @if (oidc.identity$ | async; as identity) {
+    <p>Angemeldet als <strong>{{ identity.username }}</strong>
+      @if (identity.roles.length) { ({{ identity.roles.join(', ') }}) }
+    </p>
+    <label class="demo-label" for="note">Notiz</label>
+    <textarea id="note" class="demo-note" rows="5" [(ngModel)]="text"></textarea>
+    <div class="demo-actions">
+      <button mat-raised-button color="primary" class="demo-save" (click)="save()">Speichern</button>
+      <button mat-button class="demo-logout" (click)="oidc.logout()">Abmelden</button>
+    </div>
+    @if (note()?.by) {
+      <p class="demo-saved">Zuletzt gespeichert von {{ note()?.by }} um {{ note()?.at }}</p>
+    }
+  } @else {
+    <p>Nicht angemeldet.</p>
+    <button mat-raised-button color="primary" class="demo-login" (click)="oidc.login()">Anmelden</button>
+  }
+  <p class="demo-status" role="status">{{ status() }}</p>
+</main>

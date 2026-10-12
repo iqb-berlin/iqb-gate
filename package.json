@@ -12,20 +12,24 @@
     "packages/oidc",
     "packages/gateway",
     "packages/nest",
-    "packages/angular"
+    "packages/angular",
+    "examples/demo-api",
+    "examples/demo"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular",
     "lint": "eslint .",
     "pretest": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc",
-    "test": "npm test --workspaces --if-present",
+    "test": "npm test -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular",
     "pretypecheck": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular",
+    "build:examples": "npm run build -w iqb-gate-demo-api -w iqb-gate-demo"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.12.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.71.1"
+    "typescript-eslint": "8.71.1",
+    "vite": "8.3.4"
   }
 }

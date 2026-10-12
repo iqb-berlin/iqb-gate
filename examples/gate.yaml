@@ -1,0 +1,12 @@
+# LOCAL DEMO ONLY: plain http, a provider on localhost. For a server, see
+# packages/gateway/gate.example.yaml.
+#
+# The gateway in front of the demo: saving a note has to come from a person, and the audit log
+# names the writer of a Keycloak token as checked.
+writeGate:
+  rules:
+    - { name: notes, path: '^/api/notes' }
+  userClaim: preferred_username
+oidc:
+  issuer: http://localhost:8180/realms/iqb-demo
+  clientId: iqb-gate-demo

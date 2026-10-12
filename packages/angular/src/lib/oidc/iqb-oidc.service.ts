@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { OidcSecurityService } from 'angular-auth-oidc-client';
 import {
-  catchError, combineLatest, map, type Observable, of, switchMap
+  catchError, combineLatest, distinctUntilChanged, map, type Observable, of, switchMap
 } from 'rxjs';
 
 /** Who is logged in, for the application's view. */
@@ -51,8 +51,13 @@ export function identityOfClaims(idToken: unknown, accessToken: unknown = {}): I
 export class IqbOidcService {
   private readonly oidc = inject(OidcSecurityService);
 
+  /**
+   * Changes only when someone logs in or out -- the library reports again after every renewal of
+   * the token, which is no news to the application.
+   */
   readonly isAuthenticated$: Observable<boolean> = this.oidc.isAuthenticated$.pipe(
-    map(result => result.isAuthenticated)
+    map(result => result.isAuthenticated),
+    distinctUntilChanged()
   );
 
   readonly identity$: Observable<IqbOidcIdentity | null> = this.isAuthenticated$.pipe(

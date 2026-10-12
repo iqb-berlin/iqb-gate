@@ -37,6 +37,16 @@ describe('IqbOidcService', () => {
     expect(await firstValueFrom(service.isAuthenticated$)).toBe(true);
   });
 
+  // The library reports again after every renewal of the token; an application would reload for nothing
+  it('should not report a renewal of the token as a new login', () => {
+    const reports: boolean[] = [];
+    service.isAuthenticated$.subscribe(authenticated => reports.push(authenticated));
+    oidc.isAuthenticated$.next({ isAuthenticated: true });
+    oidc.isAuthenticated$.next({ isAuthenticated: true });
+    oidc.isAuthenticated$.next({ isAuthenticated: false });
+    expect(reports).toEqual([false, true, false]);
+  });
+
   // Keycloak puts the realm's roles into the access token, not into userinfo
   it('should say who, with the roles of the access token', async () => {
     expect(await firstValueFrom(service.identity$)).toBeNull();

@@ -1,10 +1,9 @@
 import {
   beforeAll, describe, expect, it
 } from 'vitest';
-import { solveChallenge } from 'altcha-lib';
-import { deriveKey } from 'altcha-lib/algorithms/pbkdf2';
-import type { ClientSignals, HumanVerificationChallenge } from '@iqb/gate-protocol';
+import type { ClientSignals } from '@iqb/gate-protocol';
 import { WriteGate } from '../../src/write-gate/write-gate.js';
+import { solvedPayload } from '../support/solve-challenge.js';
 
 describe('WriteGate', () => {
   const gateWith = (
@@ -14,17 +13,6 @@ describe('WriteGate', () => {
     options.burst ?? { limit: 30, windowSeconds: 60 }
   );
 
-  // What the ALTCHA widget hands over after solving a challenge
-  const solve = async (challenge: HumanVerificationChallenge): Promise<string> => {
-    const solution = await solveChallenge({
-      challenge: challenge as Parameters<typeof solveChallenge>[0]['challenge'],
-      deriveKey
-    });
-    return Buffer.from(JSON.stringify({
-      challenge: { parameters: challenge.parameters, signature: challenge.signature },
-      solution
-    })).toString('base64');
-  };
 
   const person: ClientSignals = {
     webdriver: false,
@@ -43,7 +31,7 @@ describe('WriteGate', () => {
     // Solving takes about a second; one solution serves the tests that need it
     beforeAll(async () => {
       service = gateWith();
-      payload = await solve(await service.createChallenge());
+      payload = await solvedPayload(await service.createChallenge());
     }, 30_000);
 
     it('should hand out a signed challenge', async () => {
@@ -77,7 +65,7 @@ describe('WriteGate', () => {
 
     // The same solution sent from several sessions at once must count for one of them only
     it('should accept a solution for one session when it is sent for several at once', async () => {
-      const shared = await solve(await service.createChallenge());
+      const shared = await solvedPayload(await service.createChallenge());
 
       const results = await Promise.all(['sid-a', 'sid-b', 'sid-c'].map(sid => service.verify(sid, shared)));
 
@@ -85,7 +73,8 @@ describe('WriteGate', () => {
     }, 30_000);
 
     it('should reject a wrong solution', async () => {
-      const decoded = JSON.parse(Buffer.from(await solve(await service.createChallenge()), 'base64').toString());
+      const solved = await solvedPayload(await service.createChallenge());
+      const decoded = JSON.parse(Buffer.from(solved, 'base64').toString());
       // The server checks the derived key against the signature it put into the challenge
       decoded.solution.derivedKey = '00'.repeat(decoded.solution.derivedKey.length / 2);
       const wrong = Buffer.from(JSON.stringify(decoded)).toString('base64');
@@ -189,16 +178,4 @@ describe('WriteGate', () => {
     });
   });
 
-  describe('prune', () => {
-    it('should forget used challenges once they have expired', async () => {
-      const service = gateWith();
-      const used = (service as unknown as { usedChallenges: Map<string, number> }).usedChallenges;
-      used.set('old', 1_000);
-      used.set('fresh', 500_000);
-
-      service.prune(100_000);
-
-      expect([...used.keys()]).toEqual(['fresh']);
-    });
-  });
 });

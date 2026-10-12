@@ -1,4 +1,4 @@
-export const DAY_MS = 24 * 60 * 60 * 1000;
+import { DAY_MS } from '../time.js';
 
 /** A calendar day without a time, as `?to=2026-10-08` gives it. */
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;

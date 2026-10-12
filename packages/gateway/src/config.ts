@@ -5,6 +5,7 @@ import {
   ConfigError, isMapping, isPositiveInteger, listAt, rejectUnknownKeys
 } from './config-helpers.js';
 import { parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
+import { type PageGateConfig, parsePageGate } from './page-gate/page-gate-config.js';
 
 export { ConfigError, GATE_PREFIX };
 
@@ -28,8 +29,8 @@ export interface GatewayConfig {
   upstream: string;
   host: string;
   port: number;
-  /** Fastify's `trustProxy`: whether `X-Forwarded-*` from a proxy in front (Traefik) is believed. */
-  trustProxy: boolean | string[];
+  /** Fastify's `trustProxy`: the proxies in front (Traefik) whose `X-Forwarded-*` is believed. */
+  trustProxy: false | string[];
   timeouts: {
     defaultSeconds: number;
     paths: PathTimeout[];
@@ -37,10 +38,11 @@ export interface GatewayConfig {
   /** Signs the session cookie and the ALTCHA challenges. */
   secret: string;
   writeGate: WriteGateConfig;
+  pageGate: PageGateConfig;
   audit: AuditConfig;
 }
 
-/** The settings the environment gives; the file named by `IQB_GATE_CONFIG` adds timeouts and rules. */
+/** The settings the environment gives; the file named by `IQB_GATE_CONFIG` adds timeouts and gates. */
 export type GatewayEnv = Partial<Record<
   'IQB_GATE_UPSTREAM' | 'IQB_GATE_HOST' | 'IQB_GATE_PORT' | 'IQB_GATE_TRUST_PROXY' | 'IQB_GATE_CONFIG' |
   'IQB_GATE_ENFORCE' | 'IQB_GATE_SECRET' | 'IQB_GATE_AUDIT_FILE' | 'IQB_GATE_AUDIT_RETENTION_DAYS' |
@@ -80,10 +82,18 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
-function parseTrustProxy(value: string | undefined): boolean | string[] {
+/**
+ * The proxies in front whose `X-Forwarded-*` the gateway believes, by address or CIDR. Not `true`:
+ * that would believe any client's `X-Forwarded-For`, and a client could then pass for another
+ * address with every request -- and ask for challenges without end.
+ */
+function parseTrustProxy(value: string | undefined): false | string[] {
   const trimmed = value?.trim() ?? '';
   if (trimmed === '' || trimmed === 'false') return false;
-  if (trimmed === 'true') return true;
+  if (trimmed === 'true') {
+    throw new ConfigError('IQB_GATE_TRUST_PROXY names the proxies in front, by address or CIDR (e.g. 172.16.0.0/12); '
+      + '"true" would believe any client\'s X-Forwarded-For.');
+  }
   return trimmed.split(',').map(address => address.trim()).filter(address => address !== '');
 }
 
@@ -131,13 +141,13 @@ function parseFile(yamlText: string | undefined): Record<string, unknown> {
   const file: unknown = yamlText ? parse(yamlText) : null;
   if (file === null || file === undefined) return {};
   if (!isMapping(file)) throw new ConfigError('The configuration file has to be a mapping.');
-  rejectUnknownKeys(file, ['timeouts', 'writeGate'], 'The configuration file');
+  rejectUnknownKeys(file, ['timeouts', 'writeGate', 'pageGate'], 'The configuration file');
   return file;
 }
 
 /**
- * The gateway's secret. Required once writes are checked: the cookies and challenges it signs have
- * to stay valid across a restart. Without checked writes, a random one does.
+ * The gateway's secret. Required once writes are checked or pages gated: the cookies and challenges
+ * it signs have to stay valid across a restart. Without either, a random one does.
  */
 function parseSecret(value: string | undefined, required: boolean): string {
   if (value) {
@@ -146,7 +156,7 @@ function parseSecret(value: string | undefined, required: boolean): string {
     }
     return value;
   }
-  if (required) throw new ConfigError('IQB_GATE_SECRET is required when writeGate has rules.');
+  if (required) throw new ConfigError('IQB_GATE_SECRET is required when writeGate has rules or pageGate is enabled.');
   return randomBytes(32).toString('hex');
 }
 
@@ -172,14 +182,26 @@ function parseAuditKey(value: string | undefined): string | undefined {
 export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayConfig {
   const file = parseFile(configFileText);
   const writeGate = parseWriteGate(file.writeGate, env.IQB_GATE_ENFORCE);
+  // IQB_GATE_ENFORCE=off switches off both gates, for test runs
+  const configuredPageGate = parsePageGate(file.pageGate);
+  const pageGate = { ...configuredPageGate, enabled: configuredPageGate.enabled && writeGate.enforce };
+  const trustProxy = parseTrustProxy(env.IQB_GATE_TRUST_PROXY);
+  if (pageGate.enabled && trustProxy === false) {
+    throw new ConfigError('pageGate needs IQB_GATE_TRUST_PROXY: it checks HTTPS requests only, and the gateway '
+      + 'learns that a request came over HTTPS from the proxy in front that ends TLS.');
+  }
   return {
     upstream: parseUpstream(env.IQB_GATE_UPSTREAM),
     host: env.IQB_GATE_HOST || '0.0.0.0',
     port: parsePort(env.IQB_GATE_PORT),
-    trustProxy: parseTrustProxy(env.IQB_GATE_TRUST_PROXY),
+    trustProxy,
     timeouts: parseTimeouts(file.timeouts),
-    secret: parseSecret(env.IQB_GATE_SECRET, writeGate.enforce && writeGate.rules.length > 0),
+    secret: parseSecret(
+      env.IQB_GATE_SECRET,
+      (writeGate.enforce && writeGate.rules.length > 0) || pageGate.enabled
+    ),
     writeGate,
+    pageGate,
     audit: {
       file: env.IQB_GATE_AUDIT_FILE || DEFAULT_AUDIT_FILE,
       retentionDays: parseRetentionDays(env.IQB_GATE_AUDIT_RETENTION_DAYS),

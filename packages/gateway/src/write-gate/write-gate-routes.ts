@@ -14,7 +14,8 @@ import type { WriteGateConfig } from './write-gate-config.js';
 import type { WriteAssessment, WriteGate } from './write-gate.js';
 import { checkedWrite } from './write-check.js';
 import { readSession, startSession } from './gate-session.js';
-import type { RateLimit } from './rate-limit.js';
+import type { RateLimit } from '../rate-limit.js';
+import { answerChallenge } from '../challenge-route.js';
 import { unverifiedBearerClaim } from './unverified-claim.js';
 
 /** The status recorded for a client that went away before its answer was sent (nginx's convention). */
@@ -54,18 +55,12 @@ export function registerChallengeRoutes(
   challengeLimit: RateLimit
 ): void {
   gateway.get(CHALLENGE_PATH, async (request, reply) => {
-    reply.header('cache-control', 'no-store');
     if (!readSession(request)) {
-      return reply.code(400).send({
+      return reply.code(400).header('cache-control', 'no-store').send({
         statusCode: 400, error: 'Bad Request', message: 'A challenge belongs to a session; a checked write starts one.'
       });
     }
-    if (!challengeLimit.allow(request.ip, Date.now())) {
-      return reply.code(429).header('retry-after', '60').send({
-        statusCode: 429, error: 'Too Many Requests', message: 'Too many challenges from this address; try again later.'
-      });
-    }
-    return writeGate.createChallenge();
+    return answerChallenge(request, reply, challengeLimit, () => writeGate.createChallenge());
   });
 
   gateway.post<{ Body: { payload?: unknown } | undefined }>(VERIFY_PATH, async (request, reply) => {

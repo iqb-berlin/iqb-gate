@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkedWrite, pathVariants } from '../../src/write-gate/write-check.js';
+import { checkedWrite } from '../../src/write-gate/write-check.js';
 
 const CONFIG = {
   enforce: true,
@@ -17,19 +17,6 @@ const CONFIG = {
 const check = (method: string, url: string, authorization?: string) => checkedWrite(
   CONFIG, { method, url, authorization }
 )?.rule ?? null;
-
-describe('pathVariants', () => {
-  it('keeps the raw path and the path the application reads', () => {
-    expect(pathVariants('/api/%61dmin//users/./3?x=1')).toEqual({
-      raw: '/api/%61dmin//users/./3', normalised: '/api/admin/users/3'
-    });
-    expect(pathVariants('/api/x/../admin/users')).toEqual({
-      raw: '/api/x/../admin/users', normalised: '/api/admin/users'
-    });
-    expect(pathVariants('/api\\admin\\users').normalised).toBe('/api/admin/users');
-    expect(pathVariants('/api/%E0%A4%A').normalised).toBe('/api/%E0%A4%A');
-  });
-});
 
 describe('checkedWrite', () => {
   it('hands back the path as it arrived, without the query', () => {

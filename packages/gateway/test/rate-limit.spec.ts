@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RateLimit } from '../../src/write-gate/rate-limit.js';
+import { RateLimit } from '../src/rate-limit.js';
 
 describe('RateLimit', () => {
   it('allows up to the limit within the window', () => {

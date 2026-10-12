@@ -18,8 +18,23 @@ describe('parseConfig', () => {
       writeGate: {
         enforce: true, rules: [], exempt: [], burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined
       },
+      pageGate: { enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [] },
       audit: { file: '/var/lib/iqb-gate/audit.sqlite', retentionDays: 90, key: undefined }
     });
+  });
+
+  it('wants a secret and the proxy in front once pages are gated', () => {
+    const pages = 'pageGate:\n  enabled: true\n';
+    const behindProxy = { ...UPSTREAM, IQB_GATE_TRUST_PROXY: '172.16.0.0/12' };
+    expect(() => parseConfig(behindProxy, pages)).toThrow(/IQB_GATE_SECRET is required/);
+    expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_SECRET: SECRET }, pages))
+      .toThrow(/pageGate needs IQB_GATE_TRUST_PROXY/);
+    expect(parseConfig({ ...behindProxy, IQB_GATE_SECRET: SECRET }, pages).pageGate.enabled).toBe(true);
+  });
+
+  it('switches the page gate off with IQB_GATE_ENFORCE=off, for test runs', () => {
+    const pages = 'pageGate:\n  enabled: true\n';
+    expect(parseConfig({ ...UPSTREAM, IQB_GATE_ENFORCE: 'off' }, pages).pageGate.enabled).toBe(false);
   });
 
   it('wants a secret once writes are checked, and a long one', () => {
@@ -71,7 +86,7 @@ describe('parseConfig', () => {
   it('trusts a proxy in front only when told so', () => {
     expect(parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: 'false' }).trustProxy).toBe(false);
     expect(parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: '' }).trustProxy).toBe(false);
-    expect(parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: 'true' }).trustProxy).toBe(true);
+    expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: 'true' })).toThrow(/names the proxies/);
     expect(parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: '10.0.0.0/8, 172.16.0.1' }).trustProxy)
       .toEqual(['10.0.0.0/8', '172.16.0.1']);
   });

@@ -10,6 +10,7 @@ export function testConfig(upstream: string, changes: Partial<GatewayConfig> = {
     timeouts: { defaultSeconds: 5, paths: [] },
     secret: 'test-secret-test-secret-test-secret',
     writeGate: { enforce: true, rules: [], exempt: [], burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined },
+    pageGate: { enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [] },
     audit: { file: ':memory:', retentionDays: 90, key: undefined },
     ...changes
   };

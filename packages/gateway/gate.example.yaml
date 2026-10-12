@@ -30,3 +30,17 @@ writeGate:
   burst: { limit: 30, windowSeconds: 60 }
   # The claim of the Bearer JWT the audit log names the writer by -- unverified, see the audit page.
   userClaim: username
+
+# Pages opened in a browser over HTTPS solve a proof-of-work once, as with Anubis, before they are
+# delivered; the browser then holds a pass for passDays. Off unless enabled. Behind a proxy that
+# ends TLS, IQB_GATE_TRUST_PROXY has to name it -- otherwise no request counts as HTTPS.
+pageGate:
+  enabled: false
+  passDays: 7
+  # A class behind one school address opens its pages at once.
+  challengesPerAddressAndMinute: 120
+  # First match decides (allow, deny or challenge); without a match, a page is challenged. Every
+  # condition an entry names has to hold.
+  policy:
+    - { name: ai-crawlers, userAgent: '(GPTBot|CCBot|ClaudeBot|Bytespider|PerplexityBot)', action: deny }
+    - { name: uptime, userAgent: '^UptimeRobot/', path: '^/$', action: allow }

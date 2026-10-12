@@ -7,7 +7,7 @@ front of an application as a reverse proxy and will offer, step by step:
 2. **ALTCHA for writes** -- saves matched by path rules come only from people: proof-of-work,
    client signals, a burst limit and an audit log, plus the Angular library `@iqb/gate-angular`
    *(done)*
-3. **a page gate** in the manner of Anubis -- a proof-of-work page before the application loads
+3. **a page gate** in the manner of Anubis -- a proof-of-work page before the application loads *(done)*
 4. **OpenID Connect** -- login in the browser, Bearer tokens checked against the provider's JWKS
    (`@iqb/gate-nest` for NestJS backends)
 
@@ -33,10 +33,10 @@ docker run -p 8088:8080 -e IQB_GATE_UPSTREAM=http://frontend:8080 iqb-gate:local
 | `IQB_GATE_UPSTREAM` | -- (required) | origin of the application, e.g. `http://frontend:8080` |
 | `IQB_GATE_PORT` | `8080` | port the gateway listens on |
 | `IQB_GATE_HOST` | `0.0.0.0` | address the gateway listens on |
-| `IQB_GATE_TRUST_PROXY` | `false` | `true`, or a comma-separated list of addresses/CIDRs, when a proxy such as Traefik sits in front and its `X-Forwarded-*` is to be believed |
+| `IQB_GATE_TRUST_PROXY` | `false` | the proxies in front (Traefik) whose `X-Forwarded-*` is believed, as comma-separated addresses or CIDRs, e.g. `172.16.0.0/12`; `true` is refused, as it would believe any client's `X-Forwarded-For` |
 | `IQB_GATE_CONFIG` | -- | path of a YAML file with timeouts and write rules, see `packages/gateway/gate.example.yaml` |
-| `IQB_GATE_ENFORCE` | `on` | `off` checks no write -- for test runs with Cypress, which the check would keep out |
-| `IQB_GATE_SECRET` | -- (required with write rules) | at least 32 characters; signs the session cookie and the challenges |
+| `IQB_GATE_ENFORCE` | `on` | `off` switches off both gates -- for test runs with Cypress, which they would keep out |
+| `IQB_GATE_SECRET` | -- (required with write rules or the page gate) | at least 32 characters; signs cookies, passes and challenges |
 | `IQB_GATE_AUDIT_KEY` | -- | at least 32 characters; without it there is no audit page |
 | `IQB_GATE_AUDIT_FILE` | `/var/lib/iqb-gate/audit.sqlite` | the audit log (SQLite); the image declares the directory a volume |
 | `IQB_GATE_AUDIT_RETENTION_DAYS` | `90` | how long audit entries are kept |
@@ -96,6 +96,33 @@ the client left), outcome and observations. Identical rejections within a minute
 writer, rule, outcome and observations, whatever the path -- are folded into one entry with their
 count, also those of a client that keeps no cookie, so a script in a loop cannot flood the log. Read it at `/.iqb-gate/admin/` (the audit key as password, any user name) or as JSON
 at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as Bearer token).
+
+## Pages only for browsers that do the work
+
+With `pageGate.enabled`, a browser that opens a page over HTTPS gets, instead of the page, a short
+interstitial: the ALTCHA widget (served by the gateway itself) solves a proof-of-work without a click,
+the page exchanges the solution at `POST /.iqb-gate/pass` for a pass cookie
+(`__Host-iqb-gate-pass`, signed, bound to the browser's User-Agent, `passDays` long) and reloads --
+the same URL with its query and hash, so a login redirect (`?code=&state=`) carries on. A person
+waits about a second, once a week; a scraper that opens pages by the thousand pays for every one.
+
+- **Only navigations** (`Sec-Fetch-Mode: navigate`, or `Accept: text/html` from clients that do not
+  say): API calls, assets, WebSockets and frames pass untouched -- they need the application's own
+  login anyway.
+- **Only over HTTPS**, as the widget needs a secure context: over plain HTTP everything passes, so local
+  setups keep working. The gateway learns of HTTPS from the proxy in front that ends TLS, so the page
+  gate requires `IQB_GATE_TRUST_PROXY` to name it.
+- **A policy** (`pageGate.policy`) lets the first matching rule `allow`, `deny` (403) or `challenge`,
+  by User-Agent and path; see `gate.example.yaml`. `deny` applies to every request, not only to
+  pages -- a crawler need not ask for HTML. A rule's path matches the path as sent and as the
+  application reads it: `allow` needs both, `deny` and `challenge` either.
+- **A browser that does not keep the pass** (cookies blocked) is told so after one reload, instead of
+  solving and reloading without end.
+- **Challenges** cost the gateway a key derivation and go to one client address at most
+  `challengesPerAddressAndMinute` times (120 by default -- a class behind one school address).
+  They are signed for the page gate alone: a solution counts neither twice nor for the write gate.
+- **Monitoring** that fetches pages with `Accept: text/html` needs an `allow` rule, or uses
+  `/.iqb-gate/health`.
 
 **Keep the application unreachable around the gateway:** publish no ports of the application's
 containers, and route every path of the host through the gateway.

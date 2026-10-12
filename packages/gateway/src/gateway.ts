@@ -7,12 +7,16 @@ import Fastify, {
   type RouteGenericInterface
 } from 'fastify';
 import httpProxy from '@fastify/http-proxy';
+import fastifyCookie from '@fastify/cookie';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { ClientOptions } from 'ws';
 import { GATE_PREFIX, type GatewayConfig } from './config.js';
 import { forwardedHeaders } from './forwarded-headers.js';
 import { timeoutSecondsFor } from './timeouts.js';
 import { installWriteGate } from './write-gate/install-write-gate.js';
+import { installPageGate } from './page-gate/install-page-gate.js';
+import { deriveSecret } from './proof-of-work.js';
+import { inTurn } from './gate-pre-handler.js';
 
 export { GATE_PREFIX };
 
@@ -62,8 +66,8 @@ function replyUpstreamError(reply: FastifyReply<RouteGenericInterface, RawServer
  * silent, as nginx's `proxy_read_timeout`, not a limit on the whole transfer. What the upstream
  * answers, the client gets: no retries, no limit on parallel connections.
  *
- * The protections hang into this proxy as a check before a request is passed on: the write gate
- * (see `installWriteGate`).
+ * The protections hang into this proxy as checks before a request is passed on: the page gate for
+ * pages opened in a browser (`installPageGate`), the write gate for writes (`installWriteGate`).
  */
 export async function buildGateway(
   config: GatewayConfig,
@@ -82,7 +86,11 @@ export async function buildGateway(
     message: `${request.method} ${request.url} is no path of the gateway.`
   }));
 
-  const writeGateCheck = await installWriteGate(gateway, config);
+  // Cookies are parsed where a gate reads them, not for every request through the gateway; the
+  // write gate's session cookie is signed with this secret
+  await gateway.register(fastifyCookie, { secret: deriveSecret(config.secret, 'session-cookie'), hook: false });
+  const checks = [installPageGate(gateway, config), installWriteGate(gateway, config)]
+    .filter(check => check !== undefined);
 
   // Documented by the plugin, but missing from its typings -- hence declared here, not inline.
   const wsClientOptions: ClientOptions & {
@@ -106,7 +114,7 @@ export async function buildGateway(
       ...options,
       timeout: timeoutSecondsFor(request.url, config.timeouts) * 1000
     }),
-    ...(writeGateCheck ? { preHandler: writeGateCheck } : {}),
+    ...(checks.length ? { preHandler: inTurn(checks) } : {}),
     websocket: true,
     wsClientOptions
   });

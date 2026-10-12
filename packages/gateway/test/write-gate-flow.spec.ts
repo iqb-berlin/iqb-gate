@@ -4,8 +4,6 @@ import {
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
-import { solveChallenge } from 'altcha-lib';
-import { deriveKey } from 'altcha-lib/algorithms/pbkdf2';
 import {
   CHALLENGE_PATH, type ClientSignals, type HumanVerificationChallenge, VERIFY_PATH
 } from '@iqb/gate-protocol';
@@ -15,6 +13,7 @@ import type { AuditEntry } from '../src/audit/audit-log.js';
 import { compilePattern } from '../src/config-helpers.js';
 import { testConfig } from './support/test-config.js';
 import { STREAM_BODY } from './support/stream-body.js';
+import { solvedPayload } from './support/solve-challenge.js';
 
 const AUDIT_KEY = 'audit-key-audit-key-audit-key-1234';
 
@@ -64,17 +63,6 @@ function cookieFrom(response: Response): string {
   return setCookie.split(';', 1)[0];
 }
 
-/** What the ALTCHA widget hands over after solving a challenge. */
-async function solvedPayload(challenge: HumanVerificationChallenge): Promise<string> {
-  const solution = await solveChallenge({
-    challenge: challenge as Parameters<typeof solveChallenge>[0]['challenge'],
-    deriveKey
-  });
-  return Buffer.from(JSON.stringify({
-    challenge: { parameters: challenge.parameters, signature: challenge.signature },
-    solution
-  })).toString('base64');
-}
 
 const STUDIO_LITE_RULES: Pick<GatewayConfig['writeGate'], 'rules' | 'exempt'> = {
   rules: [
@@ -338,7 +326,7 @@ describe('the write gate', () => {
 
   it('names the session cookie __Host- and Secure over HTTPS', async () => {
     const https = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
-      trustProxy: true,
+      trustProxy: ['127.0.0.1'],
       writeGate: { enforce: true, burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined, ...STUDIO_LITE_RULES }
     }), false);
     const response = await https.inject({

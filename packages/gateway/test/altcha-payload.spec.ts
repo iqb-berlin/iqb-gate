@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeAltchaPayload } from '../../src/write-gate/altcha-payload.js';
+import { decodeAltchaPayload } from '../src/altcha-payload.js';
 
 describe('decodeAltchaPayload', () => {
   const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64');

@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import WebSocket, { WebSocketServer } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { buildGateway } from '../src/gateway.js';
-import type { GatewayConfig } from '../src/config.js';
+import { testConfig } from './support/test-config.js';
 
 /** Settles from outside: lets the stub upstream and the test wait for each other. */
 class Signal {
@@ -124,11 +124,7 @@ describe('gateway', () => {
   let gateway: FastifyInstance;
   let base: string;
 
-  const config = (upstreamOrigin: string): GatewayConfig => ({
-    upstream: upstreamOrigin,
-    host: '127.0.0.1',
-    port: 0,
-    trustProxy: false,
+  const config = (upstreamOrigin: string) => testConfig(upstreamOrigin, {
     timeouts: { defaultSeconds: 1, paths: [{ prefix: '/api/long', seconds: 3 }, { prefix: '/bs', seconds: 30 }] }
   });
 
@@ -313,13 +309,9 @@ describe('gateway behind a trusted proxy', () => {
 
   beforeAll(async () => {
     upstream = await startUpstream();
-    gateway = await buildGateway({
-      upstream: origin(upstream.address() as AddressInfo),
-      host: '127.0.0.1',
-      port: 0,
-      trustProxy: ['127.0.0.1'],
-      timeouts: { defaultSeconds: 5, paths: [] }
-    }, false);
+    gateway = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
+      trustProxy: ['127.0.0.1']
+    }), false);
     await gateway.listen({ host: '127.0.0.1', port: 0 });
     base = origin(gateway.server.address() as AddressInfo);
   });
@@ -363,13 +355,7 @@ describe('gateway without a reachable upstream', () => {
     });
     const address = unreachable.address() as AddressInfo;
     await new Promise(resolve => { unreachable.close(resolve); });
-    const gateway = await buildGateway({
-      upstream: origin(address),
-      host: '127.0.0.1',
-      port: 0,
-      trustProxy: false,
-      timeouts: { defaultSeconds: 1, paths: [] }
-    }, false);
+    const gateway = await buildGateway(testConfig(origin(address)), false);
     const response = await gateway.inject({ method: 'GET', url: '/' });
     expect(response.statusCode).toBe(502);
     expect(response.json()).toEqual({

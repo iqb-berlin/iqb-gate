@@ -1,0 +1,20 @@
+{
+  "name": "@iqb/gate-protocol",
+  "version": "0.0.0",
+  "description": "What the iqb-gate gateway and its client libraries agree on: headers, paths, status codes, types",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

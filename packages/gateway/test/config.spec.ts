@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, parseConfig, parseTimeouts } from '../src/config.js';
+import { ConfigError, parseConfig } from '../src/config.js';
 
 const UPSTREAM = { IQB_GATE_UPSTREAM: 'http://frontend:8080' };
+const SECRET = 'a-secret-of-at-least-32-characters!';
+
+const parseTimeouts = (text: string | undefined) => parseConfig(UPSTREAM, text).timeouts;
 
 describe('parseConfig', () => {
   it('fills in the defaults around the upstream', () => {
@@ -10,8 +13,33 @@ describe('parseConfig', () => {
       host: '0.0.0.0',
       port: 8080,
       trustProxy: false,
-      timeouts: { defaultSeconds: 600, paths: [] }
+      timeouts: { defaultSeconds: 600, paths: [] },
+      secret: expect.stringMatching(/^[0-9a-f]{64}$/),
+      writeGate: {
+        enforce: true, rules: [], exempt: [], burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined
+      },
+      audit: { file: '/var/lib/iqb-gate/audit.sqlite', retentionDays: 90, key: undefined }
     });
+  });
+
+  it('wants a secret once writes are checked, and a long one', () => {
+    const rules = 'writeGate:\n  rules:\n    - { name: admin, path: ^/api/admin/ }\n';
+    expect(() => parseConfig(UPSTREAM, rules)).toThrow(/IQB_GATE_SECRET is required/);
+    expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_SECRET: 'short' }, rules)).toThrow(/at least 32/);
+    expect(parseConfig({ ...UPSTREAM, IQB_GATE_SECRET: SECRET }, rules).secret).toBe(SECRET);
+    expect(parseConfig({ ...UPSTREAM, IQB_GATE_ENFORCE: 'off' }, rules).writeGate.enforce).toBe(false);
+  });
+
+  it('reads the audit settings', () => {
+    const config = parseConfig({
+      ...UPSTREAM,
+      IQB_GATE_AUDIT_FILE: '/data/audit.sqlite',
+      IQB_GATE_AUDIT_RETENTION_DAYS: '30',
+      IQB_GATE_AUDIT_KEY: SECRET
+    });
+    expect(config.audit).toEqual({ file: '/data/audit.sqlite', retentionDays: 30, key: SECRET });
+    expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_AUDIT_RETENTION_DAYS: '0' })).toThrow(/no number of days/);
+    expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_AUDIT_KEY: 'short' })).toThrow(/at least 32/);
   });
 
   it('requires the upstream', () => {
@@ -110,7 +138,7 @@ describe('parseTimeouts', () => {
   });
 
   it('refuses keys it does not know rather than fall back to a default', () => {
-    expect(() => parseTimeouts('timeout:\n  default: 5\n')).toThrow(/unknown keys: timeout/);
+    expect(() => parseTimeouts('timeout:\n  default: 5\n')).toThrow(/unknown keys: timeout\b/);
     expect(() => parseTimeouts('timeouts:\n  defaults: 5\n')).toThrow(/timeouts has unknown keys: defaults/);
     expect(() => parseTimeouts('timeouts:\n  paths:\n    - { prefix: /api, second: 5 }\n'))
       .toThrow(/timeouts.paths\[0\] has unknown keys: second/);

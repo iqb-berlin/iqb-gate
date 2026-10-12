@@ -1,5 +1,7 @@
 # Mounted into the container and named by IQB_GATE_CONFIG, e.g. /etc/iqb-gate/gate.yaml.
-# Without a file every request gets the default timeout.
+# Without a file every request gets the default timeout and no write is checked.
+# Unknown keys stop the gateway at start, so a misspelling cannot pass unnoticed.
+
 timeouts:
   # Seconds the app may stay silent before the gateway answers 504 -- like nginx's
   # proxy_read_timeout, not a limit on the whole transfer: an upload that keeps moving may
@@ -9,3 +11,22 @@ timeouts:
     # coding-box: workspace imports and exports run long
     - prefix: /api/admin/workspace
       seconds: 1800
+
+# Writes (POST, PUT, PATCH, DELETE) that have to come from a person. Needs IQB_GATE_SECRET;
+# IQB_GATE_ENFORCE=off switches the check off (e.g. for Cypress runs).
+writeGate:
+  # A write whose path matches one of the regular expressions is checked (case does not matter,
+  # and the path is matched as sent and as the application reads it).
+  rules:
+    - { name: administration, path: '^/api/(admin|group-admin|workspace-groups)/' }
+    - { name: workspace, path: '^/api/workspaces/[^/]+(/|$)' }
+  # Never checked; every condition an entry names has to hold.
+  exempt:
+    - { method: POST, path: '^/api/workspaces/[^/]+/download-units$' }
+    - { method: PATCH, path: '^/api/workspaces/[^/]+/units/[^/]+/comments$' }
+    # Script tokens the application checks itself (studio-lite: sl_...)
+    - { bearerPrefix: 'sl_' }
+  # More writes than this within the window ask the session for a new challenge.
+  burst: { limit: 30, windowSeconds: 60 }
+  # The claim of the Bearer JWT the audit log names the writer by -- unverified, see the audit page.
+  userClaim: username

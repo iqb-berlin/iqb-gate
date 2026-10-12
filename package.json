@@ -8,12 +8,15 @@
     "node": ">=24"
   },
   "workspaces": [
-    "packages/*"
+    "packages/protocol",
+    "packages/gateway"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint .",
+    "pretest": "npm run build -w @iqb/gate-protocol",
     "test": "npm test --workspaces --if-present",
+    "pretypecheck": "npm run build -w @iqb/gate-protocol",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

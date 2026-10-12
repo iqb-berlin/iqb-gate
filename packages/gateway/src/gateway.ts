@@ -12,6 +12,7 @@ import type { ClientOptions } from 'ws';
 import { GATE_PREFIX, type GatewayConfig } from './config.js';
 import { forwardedHeaders } from './forwarded-headers.js';
 import { timeoutSecondsFor } from './timeouts.js';
+import { installWriteGate } from './write-gate/install-write-gate.js';
 
 export { GATE_PREFIX };
 
@@ -61,7 +62,8 @@ function replyUpstreamError(reply: FastifyReply<RouteGenericInterface, RawServer
  * silent, as nginx's `proxy_read_timeout`, not a limit on the whole transfer. What the upstream
  * answers, the client gets: no retries, no limit on parallel connections.
  *
- * The protections of later steps hang into this proxy; for now it only forwards.
+ * The protections hang into this proxy as a check before a request is passed on: the write gate
+ * (see `installWriteGate`).
  */
 export async function buildGateway(
   config: GatewayConfig,
@@ -79,6 +81,8 @@ export async function buildGateway(
     error: 'Not Found',
     message: `${request.method} ${request.url} is no path of the gateway.`
   }));
+
+  const writeGateCheck = await installWriteGate(gateway, config);
 
   // Documented by the plugin, but missing from its typings -- hence declared here, not inline.
   const wsClientOptions: ClientOptions & {
@@ -102,6 +106,7 @@ export async function buildGateway(
       ...options,
       timeout: timeoutSecondsFor(request.url, config.timeouts) * 1000
     }),
+    ...(writeGateCheck ? { preHandler: writeGateCheck } : {}),
     websocket: true,
     wsClientOptions
   });

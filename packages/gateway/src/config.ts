@@ -1,12 +1,26 @@
+import { randomBytes } from 'node:crypto';
 import { parse } from 'yaml';
+import { GATE_PREFIX } from '@iqb/gate-protocol';
+import {
+  ConfigError, isMapping, isPositiveInteger, listAt, rejectUnknownKeys
+} from './config-helpers.js';
+import { parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
 
-/** The gateway's own paths; nothing below it is ever passed upstream. */
-export const GATE_PREFIX = '/.iqb-gate';
+export { ConfigError, GATE_PREFIX };
 
 /** How long the upstream may stay silent on requests below a path prefix. */
 export interface PathTimeout {
   prefix: string;
   seconds: number;
+}
+
+/** Where the audit log of checked writes is kept, for how long, and who may read it. */
+export interface AuditConfig {
+  /** The SQLite file; `:memory:` keeps it in memory (tests). */
+  file: string;
+  retentionDays: number;
+  /** What `/.iqb-gate/admin/` wants as password or Bearer token; without it, there is no audit page. */
+  key: string | undefined;
 }
 
 export interface GatewayConfig {
@@ -20,22 +34,25 @@ export interface GatewayConfig {
     defaultSeconds: number;
     paths: PathTimeout[];
   };
+  /** Signs the session cookie and the ALTCHA challenges. */
+  secret: string;
+  writeGate: WriteGateConfig;
+  audit: AuditConfig;
 }
 
-/** The settings the environment gives; the file named by `IQB_GATE_CONFIG` adds the timeouts. */
+/** The settings the environment gives; the file named by `IQB_GATE_CONFIG` adds timeouts and rules. */
 export type GatewayEnv = Partial<Record<
-  'IQB_GATE_UPSTREAM' | 'IQB_GATE_HOST' | 'IQB_GATE_PORT' | 'IQB_GATE_TRUST_PROXY' | 'IQB_GATE_CONFIG',
+  'IQB_GATE_UPSTREAM' | 'IQB_GATE_HOST' | 'IQB_GATE_PORT' | 'IQB_GATE_TRUST_PROXY' | 'IQB_GATE_CONFIG' |
+  'IQB_GATE_ENFORCE' | 'IQB_GATE_SECRET' | 'IQB_GATE_AUDIT_FILE' | 'IQB_GATE_AUDIT_RETENTION_DAYS' |
+  'IQB_GATE_AUDIT_KEY',
   string
 >>;
 
-export class ConfigError extends Error {}
-
 const DEFAULT_PORT = 8080;
 const DEFAULT_TIMEOUT_SECONDS = 600;
-
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
-}
+const DEFAULT_AUDIT_FILE = '/var/lib/iqb-gate/audit.sqlite';
+const DEFAULT_AUDIT_RETENTION_DAYS = 90;
+const MIN_SECRET_LENGTH = 32;
 
 function parseUpstream(value: string | undefined): string {
   if (!value) throw new ConfigError('IQB_GATE_UPSTREAM is required, e.g. http://frontend:8080.');
@@ -73,18 +90,6 @@ function parseTrustProxy(value: string | undefined): boolean | string[] {
 /** Characters that are no plain path: the router would read `:` and `*` as parameters. */
 const NOT_IN_A_PREFIX = /[:*?#\s]/;
 
-function isMapping(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** A misspelled key would otherwise fall back to a default without a word. */
-function rejectUnknownKeys(mapping: Record<string, unknown>, known: string[], where: string): void {
-  const unknown = Object.keys(mapping).filter(key => !known.includes(key));
-  if (unknown.length) {
-    throw new ConfigError(`${where} has unknown keys: ${unknown.join(', ')} (known: ${known.join(', ')}).`);
-  }
-}
-
 function parsePathTimeout(entry: unknown, index: number): PathTimeout {
   const where = `timeouts.paths[${index}]`;
   if (!isMapping(entry)) throw new ConfigError(`${where} has to be a mapping with prefix and seconds.`);
@@ -104,26 +109,60 @@ function parsePathTimeout(entry: unknown, index: number): PathTimeout {
 }
 
 /**
- * Reads the timeouts from the YAML file; an absent or empty file means the defaults. A prefix is
- * kept without a trailing slash: `/api/upload/` and `/api/upload` name the same subtree.
+ * Reads the `timeouts` section; an absent one means the defaults. A prefix is kept without a
+ * trailing slash: `/api/upload/` and `/api/upload` name the same subtree.
  */
-export function parseTimeouts(yamlText: string | undefined): GatewayConfig['timeouts'] {
-  const file: unknown = yamlText ? parse(yamlText) : null;
-  if (file !== null && !isMapping(file)) throw new ConfigError('The configuration file has to be a mapping.');
-  rejectUnknownKeys(file ?? {}, ['timeouts'], 'The configuration file');
-  const timeouts = file?.timeouts ?? {};
+function parseTimeouts(section: unknown): GatewayConfig['timeouts'] {
+  const timeouts = section ?? {};
   if (!isMapping(timeouts)) throw new ConfigError('timeouts has to be a mapping with default and paths.');
   rejectUnknownKeys(timeouts, ['default', 'paths'], 'timeouts');
   const defaultSeconds = timeouts.default ?? DEFAULT_TIMEOUT_SECONDS;
   if (!isPositiveInteger(defaultSeconds)) {
     throw new ConfigError('timeouts.default has to be a positive whole number of seconds.');
   }
-  const rawPaths = timeouts.paths ?? [];
-  if (!Array.isArray(rawPaths)) throw new ConfigError('timeouts.paths has to be a list.');
-  const paths = rawPaths.map(parsePathTimeout);
+  const paths = listAt(timeouts.paths, 'timeouts.paths').map(parsePathTimeout);
   const duplicate = paths.find((path, index) => paths.findIndex(other => other.prefix === path.prefix) !== index);
   if (duplicate) throw new ConfigError(`timeouts.paths names ${duplicate.prefix} twice.`);
   return { defaultSeconds, paths };
+}
+
+/** The file's sections; an absent or empty file has none. */
+function parseFile(yamlText: string | undefined): Record<string, unknown> {
+  const file: unknown = yamlText ? parse(yamlText) : null;
+  if (file === null || file === undefined) return {};
+  if (!isMapping(file)) throw new ConfigError('The configuration file has to be a mapping.');
+  rejectUnknownKeys(file, ['timeouts', 'writeGate'], 'The configuration file');
+  return file;
+}
+
+/**
+ * The gateway's secret. Required once writes are checked: the cookies and challenges it signs have
+ * to stay valid across a restart. Without checked writes, a random one does.
+ */
+function parseSecret(value: string | undefined, required: boolean): string {
+  if (value) {
+    if (value.length < MIN_SECRET_LENGTH) {
+      throw new ConfigError(`IQB_GATE_SECRET has to be at least ${MIN_SECRET_LENGTH} characters.`);
+    }
+    return value;
+  }
+  if (required) throw new ConfigError('IQB_GATE_SECRET is required when writeGate has rules.');
+  return randomBytes(32).toString('hex');
+}
+
+function parseRetentionDays(value: string | undefined): number {
+  if (value === undefined || value === '') return DEFAULT_AUDIT_RETENTION_DAYS;
+  const days = Number(value);
+  if (!isPositiveInteger(days)) throw new ConfigError(`IQB_GATE_AUDIT_RETENTION_DAYS is no number of days: ${value}`);
+  return days;
+}
+
+function parseAuditKey(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (value.length < MIN_SECRET_LENGTH) {
+    throw new ConfigError(`IQB_GATE_AUDIT_KEY has to be at least ${MIN_SECRET_LENGTH} characters.`);
+  }
+  return value;
 }
 
 /**
@@ -131,11 +170,20 @@ export function parseTimeouts(yamlText: string | undefined): GatewayConfig['time
  * `IQB_GATE_CONFIG` names (read by the caller). Throws a {@link ConfigError} saying what is wrong.
  */
 export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayConfig {
+  const file = parseFile(configFileText);
+  const writeGate = parseWriteGate(file.writeGate, env.IQB_GATE_ENFORCE);
   return {
     upstream: parseUpstream(env.IQB_GATE_UPSTREAM),
     host: env.IQB_GATE_HOST || '0.0.0.0',
     port: parsePort(env.IQB_GATE_PORT),
     trustProxy: parseTrustProxy(env.IQB_GATE_TRUST_PROXY),
-    timeouts: parseTimeouts(configFileText)
+    timeouts: parseTimeouts(file.timeouts),
+    secret: parseSecret(env.IQB_GATE_SECRET, writeGate.enforce && writeGate.rules.length > 0),
+    writeGate,
+    audit: {
+      file: env.IQB_GATE_AUDIT_FILE || DEFAULT_AUDIT_FILE,
+      retentionDays: parseRetentionDays(env.IQB_GATE_AUDIT_RETENTION_DAYS),
+      key: parseAuditKey(env.IQB_GATE_AUDIT_KEY)
+    }
   };
 }

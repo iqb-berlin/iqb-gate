@@ -20,6 +20,7 @@ The gateway owns the paths below `/.iqb-gate/`; everything else goes to the appl
 | `packages/gateway` | the reverse proxy (Node 24, Fastify), shipped as a Docker image |
 | `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types |
 | `packages/oidc` | `@iqb/gate-oidc`: checks OpenID Connect access tokens against the provider's keys (Node) |
+| `packages/nest` | `@iqb/gate-nest`: the same for NestJS backends -- a module, a guard, a parameter decorator |
 | `packages/angular` | `@iqb/gate-angular`: the browser half for Angular 20 and 21 applications |
 
 ## Running the gateway
@@ -114,6 +115,37 @@ secrets) and checks the issuer, the expiry, and -- when given -- that the client
 as `azp`, and the `audience`. `identity` holds issuer, subject, a username (`preferred_username`, else
 e-mail, else subject), e-mail, names and roles (Keycloak's realm and client roles). It never throws
 for a bad token; `onRejected` hears why.
+
+In a NestJS backend (Nest 11), `@iqb/gate-nest` does it for the routes:
+
+```typescript
+@Module({
+  imports: [
+    IqbOidcModule.forRootAsync({
+      imports: [ConfigModule, UsersModule],
+      inject: [ConfigService, UsersService],
+      useFactory: (config: ConfigService, users: UsersService) => ({
+        issuer: config.getOrThrow('OIDC_ISSUER'),
+        clientId: config.getOrThrow('OIDC_CLIENT_ID'),
+        // the application's own user: found or created by issuer and subject; null keeps the person out
+        userSync: { sync: identity => users.syncOidcUser(identity) }
+      })
+    })
+  ]
+})
+export class AppModule {}
+
+@UseGuards(OidcAuthGuard)
+@Get('me')
+me(@OidcIdentity() identity: OidcIdentityData, @Req() request: { user: User }) { ... }
+```
+
+`OidcAuthGuard` answers 401 for a request without a token of the provider, or whose person the
+`userSync` does not take -- in every module and as global guard alike, as the module sets both up
+itself. `@OidcIdentity()` refuses a route the guard did not check. Only HTTP requests are let in. An
+application that checks further tokens of its own in one strategy (coding-box: workspace tokens)
+injects the verifier as `OIDC_VERIFIER` there. The package is CommonJS, as Nest applications are,
+and needs Node 22.12 or later.
 
 With an `oidc` section in its configuration, the gateway checks the Bearer token of every checked
 write that way and names the person in the audit log, marked as checked. It never decides about the

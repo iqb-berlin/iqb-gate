@@ -11,6 +11,7 @@
     "packages/protocol",
     "packages/oidc",
     "packages/gateway",
+    "packages/nest",
     "packages/angular"
   ],
   "scripts": {

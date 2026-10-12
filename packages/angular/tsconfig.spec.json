@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out-tsc/angular-spec",
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "types": [
+      "jest",
+      "node"
+    ],
+    "esModuleInterop": true,
+    "paths": {
+      "altcha": [
+        "../../node_modules/altcha/dist/types/generic.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.spec.ts",
+    "src/test-setup.ts",
+    "src/**/*.d.ts"
+  ]
+}

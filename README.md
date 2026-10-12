@@ -5,8 +5,8 @@ front of an application as a reverse proxy and will offer, step by step:
 
 1. **a transparent proxy** -- streaming, WebSockets, server-sent events, timeouts per path *(done)*
 2. **ALTCHA for writes** -- saves matched by path rules come only from people: proof-of-work,
-   client signals, a burst limit and an audit log *(gateway done)*, plus the Angular library
-   `@iqb/gate-angular`
+   client signals, a burst limit and an audit log, plus the Angular library `@iqb/gate-angular`
+   *(done)*
 3. **a page gate** in the manner of Anubis -- a proof-of-work page before the application loads
 4. **OpenID Connect** -- login in the browser, Bearer tokens checked against the provider's JWKS
    (`@iqb/gate-nest` for NestJS backends)
@@ -19,6 +19,7 @@ The gateway owns the paths below `/.iqb-gate/`; everything else goes to the appl
 |---|---|
 | `packages/gateway` | the reverse proxy (Node 24, Fastify), shipped as a Docker image |
 | `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types |
+| `packages/angular` | `@iqb/gate-angular`: the browser half for Angular 20 and 21 applications |
 
 ## Running the gateway
 
@@ -98,6 +99,35 @@ at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as Bearer token).
 
 **Keep the application unreachable around the gateway:** publish no ports of the application's
 containers, and route every path of the host through the gateway.
+
+## In an Angular application
+
+`@iqb/gate-angular` sends the browser's report with every write to its own origin and, when the
+gateway answers 428, shows the ALTCHA challenge in a Material dialog and repeats the write. It is
+built with Angular 20 in partial compilation, so Angular 20 and 21 applications can use it.
+
+```typescript
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideIqbGate({
+      // optional: the application's own texts instead of the library's German ones, asked for
+      // whenever the dialog opens -- e.g. from ngx-translate
+      texts: () => {
+        const translate = inject(TranslateService);
+        return { title: translate.instant('human-verification.title') };
+      }
+    }),
+    // after the interceptor that adds the token, so that a repeated write carries it as well
+    provideHttpClient(withInterceptors([authInterceptor, iqbGateInterceptor]))
+  ]
+});
+```
+
+Applications that register interceptors as classes use `IqbGateInterceptor` with
+`HTTP_INTERCEPTORS` instead. `isAutomationDetected(error)` recognises the gateway's 403, for a
+message of the application's own. Requests to other origins (an identity provider) and to the
+gateway's own paths are left untouched. The widget (`altcha`) is loaded only when a challenge is
+due; the page needs `worker-src 'self' blob:` in its Content Security Policy.
 
 ## Development
 

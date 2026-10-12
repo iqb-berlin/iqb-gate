@@ -14,6 +14,7 @@ import type { GatewayConfig } from '../src/config.js';
 import type { AuditEntry } from '../src/audit/audit-log.js';
 import { compilePattern } from '../src/config-helpers.js';
 import { testConfig } from './support/test-config.js';
+import { STREAM_BODY } from './support/stream-body.js';
 
 const AUDIT_KEY = 'audit-key-audit-key-audit-key-1234';
 
@@ -236,7 +237,7 @@ describe('the write gate', () => {
       }
     });
     const response = await fetch(`${base}/api/admin/upload`, {
-      method: 'POST', headers: { cookie, 'x-client-signals': signals() }, body, duplex: 'half'
+      method: 'POST', headers: { cookie, 'x-client-signals': signals() }, body, ...STREAM_BODY
     });
     expect(response.status).toBe(201);
     expect((await response.json() as { bytes: number }).bytes).toBe(16 * 1024 * 1024);
@@ -252,7 +253,7 @@ describe('the write gate', () => {
       }
     });
     const response = await fetch(`${base}/api/admin/upload`, {
-      method: 'POST', headers: { 'x-client-signals': signals() }, body, duplex: 'half'
+      method: 'POST', headers: { 'x-client-signals': signals() }, body, ...STREAM_BODY
     });
     expect(response.status).toBe(428);
     expect(upstreamHits.length).toBe(hits);

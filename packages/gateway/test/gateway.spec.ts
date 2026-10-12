@@ -9,6 +9,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { buildGateway } from '../src/gateway.js';
 import { testConfig } from './support/test-config.js';
+import { STREAM_BODY } from './support/stream-body.js';
 
 /** Settles from outside: lets the stub upstream and the test wait for each other. */
 class Signal {
@@ -212,7 +213,7 @@ describe('gateway', () => {
     const body = generatedBody(8, async index => {
       if (index === 1) await upstreamState.firstChunkArrived.promise;
     });
-    const response = await fetch(`${base}/api/upload`, { method: 'POST', body: body.stream, duplex: 'half' });
+    const response = await fetch(`${base}/api/upload`, { method: 'POST', body: body.stream, ...STREAM_BODY });
     const received = await response.json() as Received;
     expect(received.length).toBe(8 * MIB);
     expect(received.sha256).toBe(body.sha256());
@@ -220,7 +221,7 @@ describe('gateway', () => {
 
   it('carries a large upload byte for byte, without a body limit', async () => {
     const body = generatedBody(512);
-    const response = await fetch(`${base}/api/upload`, { method: 'PUT', body: body.stream, duplex: 'half' });
+    const response = await fetch(`${base}/api/upload`, { method: 'PUT', body: body.stream, ...STREAM_BODY });
     expect(response.status).toBe(201);
     const received = await response.json() as Received;
     expect(received.length).toBe(512 * MIB);
@@ -263,7 +264,7 @@ describe('gateway', () => {
   it('lets an upload take longer than the timeout as long as it keeps moving', async () => {
     // 6 chunks, 300 ms apart: 1.8 s of sending against a timeout of 1 s.
     const body = generatedBody(6, () => sleep(300));
-    const response = await fetch(`${base}/api/upload`, { method: 'POST', body: body.stream, duplex: 'half' });
+    const response = await fetch(`${base}/api/upload`, { method: 'POST', body: body.stream, ...STREAM_BODY });
     expect(response.status).toBe(201);
     expect((await response.json() as Received).sha256).toBe(body.sha256());
   });

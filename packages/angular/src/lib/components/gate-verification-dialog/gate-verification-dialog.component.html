@@ -1,0 +1,35 @@
+<h1 mat-dialog-title>{{ texts.title }}</h1>
+<div mat-dialog-content class="gate-verification-content">
+  <p>{{ texts.intro }}</p>
+  @if (widgetReady() && challenge(); as challengeJson) {
+    <altcha-widget class="gate-verification-widget"
+                   data-cy="human-verification-widget"
+                   [attr.challenge]="challengeJson"
+                   [attr.language]="widgetLanguage"
+                   (verified)="onVerified($event)">
+    </altcha-widget>
+  }
+  @if (failed()) {
+    <p class="gate-verification-failed">{{ texts.failed }}</p>
+  }
+  @if (loadFailed()) {
+    <p class="gate-verification-failed">{{ texts.loadFailed }}</p>
+  }
+</div>
+<div mat-dialog-actions align="end">
+  @if (loadFailed()) {
+    <button mat-raised-button
+            color="primary"
+            class="gate-verification-retry"
+            data-cy="human-verification-retry"
+            (click)="load()">
+      {{ texts.retry }}
+    </button>
+  }
+  <button mat-raised-button
+          class="gate-verification-cancel"
+          data-cy="human-verification-cancel"
+          (click)="cancel()">
+    {{ texts.cancel }}
+  </button>
+</div>

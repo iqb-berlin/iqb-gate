@@ -9,6 +9,7 @@ export default tseslint.config(
     rules: {
       'max-len': ['error', { code: 120 }],
       '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/ban-ts-comment': 'error',
       'no-restricted-syntax': [
         'error',

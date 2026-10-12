@@ -1,0 +1,13 @@
+.gate-verification-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gate-verification-widget {
+  display: block;
+}
+
+.gate-verification-failed {
+  color: var(--mat-sys-error, #b3261e);
+}

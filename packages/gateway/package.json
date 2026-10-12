@@ -1,0 +1,29 @@
+{
+  "name": "@iqb/gate-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The iqb-gate reverse proxy, shipped as the Docker image iqbberlin/iqb-gate",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/http-proxy": "11.6.4",
+    "fastify": "5.12.5",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
+    "vitest": "4.1.11",
+    "ws": "8.22.0"
+  }
+}

@@ -1,0 +1,11 @@
+# Mounted into the container and named by IQB_GATE_CONFIG, e.g. /etc/iqb-gate/gate.yaml.
+# Without a file every request gets the default timeout.
+timeouts:
+  # Seconds the app may stay silent before the gateway answers 504 -- like nginx's
+  # proxy_read_timeout, not a limit on the whole transfer: an upload that keeps moving may
+  # take longer.
+  default: 600
+  paths:
+    # coding-box: workspace imports and exports run long
+    - prefix: /api/admin/workspace
+      seconds: 1800

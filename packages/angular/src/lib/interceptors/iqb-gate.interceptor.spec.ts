@@ -12,11 +12,13 @@ import { type ClientSignals, CLIENT_SIGNALS_HEADER } from '@iqb/gate-protocol';
 import { iqbGateInterceptor, IqbGateInterceptor } from './iqb-gate.interceptor';
 import { GateInputActivityService } from '../services/gate-input-activity.service';
 import { GateVerificationService } from '../services/gate-verification.service';
+import { GateRefusalNoticeService } from '../services/gate-refusal-notice.service';
 
 jest.mock('altcha', () => ({}));
 
 describe('iqbGateInterceptor', () => {
   let verification: { verify: jest.Mock };
+  let notice: { show: jest.Mock };
   const signals: ClientSignals = {
     webdriver: false,
     headless: false,
@@ -26,7 +28,9 @@ describe('iqbGateInterceptor', () => {
     devtoolsProtocol: false
   };
 
-  const required = new HttpErrorResponse({ status: 428, url: '/api/workspaces/1/units/2/properties' });
+  const required = new HttpErrorResponse({
+    status: 428, error: { code: 'human-verification-required' }, url: '/api/workspaces/1/units/2/properties'
+  });
   const saved = new HttpResponse({ status: 200, body: true });
 
   /** A handler that answers each call with the next of the given answers. */
@@ -44,27 +48,22 @@ describe('iqbGateInterceptor', () => {
 
   beforeEach(() => {
     verification = { verify: jest.fn() };
+    notice = { show: jest.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: GateInputActivityService, useValue: { signals: () => signals } },
-        { provide: GateVerificationService, useValue: verification }
+        { provide: GateVerificationService, useValue: verification },
+        { provide: GateRefusalNoticeService, useValue: notice }
       ]
     });
   });
 
-  it('should leave reading requests as they are', async () => {
-    const next = handlerAnswering(saved);
-    const request = new HttpRequest('GET', '/api/workspaces');
-
-    await intercept(request, next);
-
-    expect(next).toHaveBeenCalledWith(request);
-  });
-
-  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('should send what the browser observed with a %s', async method => {
+  // The gateway checks reads as well: a read without the report would be refused as automated
+  const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
+  it.each(methods)('should send what the browser observed with a %s', async method => {
     const next = handlerAnswering(saved);
 
-    await intercept(new HttpRequest(method, '/api/x', null), next);
+    await intercept(new HttpRequest(method as 'GET', '/api/x', null), next);
 
     const sent = next.mock.calls[0][0];
     expect(JSON.parse(sent.headers.get(CLIENT_SIGNALS_HEADER) as string)).toEqual(signals);
@@ -106,11 +105,37 @@ describe('iqbGateInterceptor', () => {
     expect(next).toHaveBeenCalledWith(request);
   });
 
-  it('should pass any other error on', async () => {
+  it('should pass any other error on, without a notice', async () => {
     const next = handlerAnswering(new HttpErrorResponse({ status: 403 }));
 
     await expect(intercept(new HttpRequest('PATCH', '/api/x', {}), next)).rejects.toMatchObject({ status: 403 });
     expect(verification.verify).not.toHaveBeenCalled();
+    expect(notice.show).not.toHaveBeenCalled();
+  });
+
+  it('should tell the person when the gateway refuses the browser as automated, and fail the request', async () => {
+    const automated = new HttpErrorResponse({ status: 403, error: { code: 'automation-detected' } });
+    const next = handlerAnswering(automated);
+
+    await expect(intercept(new HttpRequest('GET', '/api/x'), next)).rejects.toBe(automated);
+    expect(notice.show).toHaveBeenCalledWith('automation-detected');
+  });
+
+  it('should open the challenge on 428 to a read and send the read again once it is solved', async () => {
+    verification.verify.mockReturnValue(of(true));
+    const next = handlerAnswering(required, saved);
+
+    expect(await intercept(new HttpRequest('GET', '/api/x'), next)).toBe(saved);
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  // A burst of requests right after the challenge: the gateway asks again, and the person is told
+  it('should tell the person when the repeated request is refused again', async () => {
+    verification.verify.mockReturnValue(of(true));
+    const next = handlerAnswering(required, required);
+
+    await expect(intercept(new HttpRequest('GET', '/api/x'), next)).rejects.toBe(required);
+    expect(notice.show).toHaveBeenCalledWith('not-verified');
   });
 
   it('should open the challenge on 428 and send the write again once it is solved', async () => {
@@ -130,6 +155,8 @@ describe('iqbGateInterceptor', () => {
 
     await expect(intercept(new HttpRequest('PATCH', '/api/x', {}), next)).rejects.toBe(required);
     expect(next).toHaveBeenCalledTimes(1);
+    // The person cancelled it and knows why
+    expect(notice.show).not.toHaveBeenCalled();
   });
 });
 
@@ -142,7 +169,8 @@ describe('the interceptor in an HTTP client', () => {
         ...providers as never[],
         provideHttpClientTesting(),
         { provide: GateInputActivityService, useValue: { signals: () => signals } },
-        { provide: GateVerificationService, useValue: { verify: () => of(true) } }
+        { provide: GateVerificationService, useValue: { verify: () => of(true) } },
+        { provide: GateRefusalNoticeService, useValue: { show: jest.fn() } }
       ]
     });
     return { http: TestBed.inject(HttpClient), controller: TestBed.inject(HttpTestingController) };
@@ -167,8 +195,23 @@ describe('the interceptor in an HTTP client', () => {
     const { http, controller } = setUp([provideHttpClient(withInterceptors([iqbGateInterceptor]))]);
     const answers: unknown[] = [];
     http.post('/api/x', {}).subscribe(answer => answers.push(answer));
-    controller.expectOne('/api/x').flush(null, { status: 428, statusText: 'Precondition Required' });
+    controller.expectOne('/api/x')
+      .flush({ code: 'human-verification-required' }, { status: 428, statusText: 'Precondition Required' });
     controller.expectOne('/api/x').flush({ saved: true });
     expect(answers).toEqual([{ saved: true }]);
+  });
+
+  // A 428 of the application's own (a conditional request, say) is its business, not the gateway's
+  it('leaves a 428 without the gateway\'s code to the application', () => {
+    const { http, controller } = setUp([provideHttpClient(withInterceptors([iqbGateInterceptor]))]);
+    const verify = jest.spyOn(TestBed.inject(GateVerificationService), 'verify');
+    const errors: HttpErrorResponse[] = [];
+    http.put('/api/x', {}).subscribe({ error: (error: HttpErrorResponse) => errors.push(error) });
+    controller.expectOne('/api/x')
+      .flush({ message: 'If-Match missing' }, { status: 428, statusText: 'Precondition Required' });
+    controller.verify();
+    expect(verify).not.toHaveBeenCalled();
+    expect(TestBed.inject(GateRefusalNoticeService).show).not.toHaveBeenCalled();
+    expect(errors.map(error => error.status)).toEqual([428]);
   });
 });

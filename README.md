@@ -8,7 +8,9 @@ front of an application as a reverse proxy and will offer, step by step:
    client signals, a burst limit and an audit log, plus the Angular library `@iqb/gate-angular`
    *(done)*
 3. **a page gate** in the manner of Anubis -- a proof-of-work page before the application loads *(done)*
-4. **OpenID Connect** -- login in the browser, Bearer tokens checked against the provider's JWKS
+4. **reads only from people** -- API reads matched by path rules only from a person's browser, with the
+   challenge of the same session and a read limit *(done)*
+5. **OpenID Connect** -- login in the browser, Bearer tokens checked against the provider's JWKS
    (`@iqb/gate-oidc`, `@iqb/gate-nest` for NestJS backends, `provideIqbOidc` in the browser) *(done)*
 
 The gateway owns the paths below `/.iqb-gate/`; everything else goes to the application.
@@ -18,7 +20,7 @@ The gateway owns the paths below `/.iqb-gate/`; everything else goes to the appl
 | Package | What it is |
 |---|---|
 | `packages/gateway` | the reverse proxy (Node 24, Fastify), shipped as a Docker image |
-| `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types |
+| `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types (ES modules and CommonJS) |
 | `packages/oidc` | `@iqb/gate-oidc`: checks OpenID Connect access tokens against the provider's keys (Node) |
 | `packages/nest` | `@iqb/gate-nest`: the same for NestJS backends -- a module, a guard, a parameter decorator |
 | `packages/angular` | `@iqb/gate-angular`: the browser half for Angular 20 and 21 applications |
@@ -36,10 +38,11 @@ docker run -p 8088:8080 -e IQB_GATE_UPSTREAM=http://frontend:8080 iqb-gate:local
 | `IQB_GATE_PORT` | `8080` | port the gateway listens on |
 | `IQB_GATE_HOST` | `0.0.0.0` | address the gateway listens on |
 | `IQB_GATE_TRUST_PROXY` | `false` | the proxies in front (Traefik) whose `X-Forwarded-*` is believed, as comma-separated addresses or CIDRs, e.g. `172.16.0.0/12`; `true` is refused, as it would believe any client's `X-Forwarded-For` |
-| `IQB_GATE_CONFIG` | -- | path of a YAML file with upstreams per path, timeouts and write rules, see `packages/gateway/gate.example.yaml` |
-| `IQB_GATE_ENFORCE` | `on` | `off` switches off both gates -- for test runs with Cypress, which they would keep out |
+| `IQB_GATE_CONFIG` | -- | path of a YAML file with upstreams per path, timeouts, write and read rules, see `packages/gateway/gate.example.yaml` |
+| `IQB_GATE_ENFORCE` | `on` | `off` switches off every gate -- for test runs with Cypress, which they would keep out |
 | `IQB_GATE_RULES_OFF` | -- | names of write rules to switch off, comma-separated, e.g. `workspace`; their writes pass unchecked and no rule further down takes them. A name no rule has stops the gateway at start |
-| `IQB_GATE_SECRET` | -- (required with write rules or the page gate) | at least 32 characters; signs cookies, passes and challenges |
+| `IQB_GATE_READ_RULES_OFF` | -- | the same for read rules (`readGate.rules`), independent of the write rules |
+| `IQB_GATE_SECRET` | -- (required with write or read rules or the page gate) | at least 32 characters; signs cookies, passes and challenges |
 | `IQB_GATE_AUDIT_KEY` | -- | at least 32 characters; without it there is no audit page |
 | `IQB_GATE_AUDIT_FILE` | `/var/lib/iqb-gate/audit.sqlite` | the audit log (SQLite); the image declares the directory a volume |
 | `IQB_GATE_AUDIT_RETENTION_DAYS` | `90` | how long audit entries are kept |
@@ -81,7 +84,8 @@ when they come from a person:
    `human-verification-required`; the library then fetches `GET /.iqb-gate/challenge`, lets the
    person tick the box, hands the solution in at `POST /.iqb-gate/verify` and repeats the write. A
    challenge costs the gateway a key derivation: it is handed out only to a session the gateway
-   started (with a 428), and to one client address at most 30 times a minute (429 beyond).
+   started (with a 428), and to one client address at most `challenges.perAddressAndMinute` times a
+   minute (120 by default, 429 beyond).
 3. **A burst limit:** more than `burst.limit` writes within `burst.windowSeconds` ask for a new
    challenge.
 
@@ -97,8 +101,32 @@ named by `writeGate.userClaim` from the Bearer JWT (unverified: trustworthy only
 when the application accepted the token), method, path without the query, rule, status (499 when
 the client left), outcome and observations. Identical rejections within a minute -- same session,
 writer, rule, outcome and observations, whatever the path -- are folded into one entry with their
-count, also those of a client that keeps no cookie, so a script in a loop cannot flood the log. Read it at `/.iqb-gate/admin/` (the audit key as password, any user name) or as JSON
-at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as Bearer token).
+count, also those of a client that keeps no cookie, so a script in a loop cannot flood the log.
+Refused reads go into the same log (see below). Read it at `/.iqb-gate/admin/` (the audit key as
+password, any user name) or as JSON at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as
+Bearer token). The SQLite table is `audit`; a log file from before reads were checked has its
+`write_audit` renamed at start, keeping its entries -- an older gateway cannot read it afterwards.
+
+## Reads only from people
+
+Reads (GET, HEAD) whose path matches a rule in `readGate.rules` go through only when they come from
+a person's browser -- an agent or a script that was handed a token cannot read the data:
+
+1. **The browser's report**, as for writes: a browser that says it is automated, or a client that
+   sends no report, is answered **403** `automation-detected`. Input dispatched by a script and the
+   time since the last input say nothing about a read and are not held against it.
+2. **A solved challenge of the session:** the same session state as for writes, so the challenge of
+   the login counts for every read after it -- a person solves one challenge per session, not one per
+   page. Until then **428**, and the library asks for the challenge as for a write.
+3. **A read limit** (`readGate.limit`, 600 reads within 60 seconds by default): a session that reads
+   faster than a person loses its verification, for its writes as well.
+
+Rules, exemptions (`path`, `bearerPrefix`; no method) and `IQB_GATE_READ_RULES_OFF` work as for
+writes. Public reads that a page makes before the login, and files that something else than the
+application's HTTP client loads (a script tag in an embedded module), need an exemption: they carry
+no report. A refused read is written to the audit log, folded like a refused write; a read let
+through is not -- a person reads hundreds of times an hour. Checking a read costs the gateway a
+header parse and a look into its memory, no key derivation.
 
 ## Checking OpenID Connect tokens
 
@@ -184,9 +212,12 @@ containers, and route every path of the host through the gateway.
 
 ## In an Angular application
 
-`@iqb/gate-angular` sends the browser's report with every write to its own origin and, when the
-gateway answers 428, shows the ALTCHA challenge in a Material dialog and repeats the write. It is
-built with Angular 20 in partial compilation, so Angular 20 and 21 applications can use it.
+`@iqb/gate-angular` sends the browser's report with every request to its own origin and, when the
+gateway answers 428, shows the ALTCHA challenge in a Material dialog and repeats the request. When the
+gateway refuses the browser as automated, or asks again right after a solved challenge, a dialog of
+its own says so (`GateRefusalNoticeService`, one for all requests refused at once); a challenge the
+person cancelled is not announced. It is built with Angular 20 in partial compilation, so Angular 20
+and 21 applications can use it.
 
 ```typescript
 bootstrapApplication(AppComponent, {
@@ -234,8 +265,10 @@ be revoked. Built on `angular-auth-oidc-client`; the application needs `@angular
 backends check the token with `@iqb/gate-nest` or `@iqb/gate-oidc`.
 
 Applications that register interceptors as classes use `IqbGateInterceptor` with
-`HTTP_INTERCEPTORS` instead. `isAutomationDetected(error)` recognises the gateway's 403, for a
-message of the application's own. Requests to other origins (an identity provider) and to the
+`HTTP_INTERCEPTORS` instead. `isGateRefusal(error)` tells an error the gateway caused -- the
+library has already said why -- so that the application leaves it out of its own error display;
+`gateRefusalOf(error)` and `isAutomationDetected(error)` name it. `@iqb/gate-protocol` ships CommonJS
+beside its ES modules, so Jest loads it without a `transformIgnorePatterns` entry. Requests to other origins (an identity provider) and to the
 gateway's own paths are left untouched. The widget (`altcha`) is loaded only when a challenge is
 due; the page needs `worker-src 'self' blob:` in its Content Security Policy.
 

@@ -57,7 +57,7 @@ describe('AuditLog', () => {
     it('only reports a failed write, never throws', () => {
       log.close();
       expect(() => log.record(write())).not.toThrow();
-      expect(onError).toHaveBeenCalledWith('Writing the audit entry of a write failed.', expect.any(Error));
+      expect(onError).toHaveBeenCalledWith('Writing an audit entry failed.', expect.any(Error));
       log = new AuditLog(':memory:', 90 * DAY_MS, onError);
     });
 
@@ -86,6 +86,89 @@ describe('AuditLog', () => {
       expect(migrated.find().map(entry => [entry.user, entry.userVerified])).toEqual([['anna', true], ['old', false]]);
       migrated.close();
       rmSync(directory, { recursive: true });
+    });
+
+    // A log written before reads were checked keeps its entries in a table named for writes
+    it('renames the table of an older log file to audit, with its index, keeping its entries', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'iqb-gate-audit-'));
+      const file = join(directory, 'audit.sqlite');
+      const old = new DatabaseSync(file);
+      old.exec(`CREATE TABLE write_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, session_id TEXT, user TEXT,
+        user_verified INTEGER NOT NULL DEFAULT 0, method TEXT NOT NULL, path TEXT NOT NULL, rule TEXT NOT NULL,
+        status_code INTEGER NOT NULL, outcome TEXT NOT NULL, repeated INTEGER NOT NULL DEFAULT 0,
+        blocking_signals TEXT NOT NULL, logged_signals TEXT NOT NULL);
+        CREATE INDEX write_audit_created_at ON write_audit (created_at)`);
+      old.exec(`INSERT INTO write_audit (created_at, session_id, user, method, path, rule, status_code, outcome,
+        blocking_signals, logged_signals) VALUES (1, 's0', 'old', 'PUT', '/api/admin/x', 'administration', 200,
+        'allowed', '[]', '[]')`);
+      old.close();
+
+      const renamed = new AuditLog(file, 90 * DAY_MS, onError);
+      renamed.record(write(), 2000);
+      expect(renamed.find().map(entry => entry.user)).toEqual(['anna', 'old']);
+      renamed.close();
+      const check = new DatabaseSync(file);
+      const names = (check.prepare('SELECT name FROM sqlite_master ORDER BY name').all() as Array<{ name: string }>)
+        .map(({ name }) => name)
+        .filter(name => !name.startsWith('sqlite_'));
+      check.close();
+      expect(names).toEqual(['audit', 'audit_created_at']);
+      rmSync(directory, { recursive: true });
+    });
+
+    // Back on an older gateway after this one had started, and then on this one again
+    it('takes over what an older gateway wrote beside the log, and keeps the log\'s own entries', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'iqb-gate-audit-'));
+      const file = join(directory, 'audit.sqlite');
+      const first = new AuditLog(file, 90 * DAY_MS, onError);
+      first.record(write(), 1000);
+      first.close();
+      const old = new DatabaseSync(file);
+      old.exec(`CREATE TABLE write_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, session_id TEXT, user TEXT,
+        method TEXT NOT NULL, path TEXT NOT NULL, rule TEXT NOT NULL, status_code INTEGER NOT NULL,
+        outcome TEXT NOT NULL, repeated INTEGER NOT NULL DEFAULT 0, blocking_signals TEXT NOT NULL,
+        logged_signals TEXT NOT NULL)`);
+      old.exec(`INSERT INTO write_audit (created_at, session_id, user, method, path, rule, status_code, outcome,
+        blocking_signals, logged_signals) VALUES (2000, 's0', 'old', 'PUT', '/api/admin/x', 'administration', 200,
+        'allowed', '[]', '[]')`);
+      old.close();
+
+      const adopted = new AuditLog(file, 90 * DAY_MS, onError);
+      expect(adopted.find().map(entry => entry.user)).toEqual(['old', 'anna']);
+      adopted.close();
+      const check = new DatabaseSync(file);
+      const tables = check
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'write_audit'")
+        .all();
+      check.close();
+      expect(tables).toEqual([]);
+      rmSync(directory, { recursive: true });
+    });
+
+    it('leaves the file as it was, and unlocked, when taking over the older table fails', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'iqb-gate-audit-'));
+      const file = join(directory, 'audit.sqlite');
+      const old = new DatabaseSync(file);
+      // A view by the new name: the table cannot be renamed to it
+      old.exec(`CREATE TABLE write_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL);
+        INSERT INTO write_audit (created_at) VALUES (1);
+        CREATE VIEW audit AS SELECT 1`);
+      old.close();
+
+      expect(() => new AuditLog(file, 90 * DAY_MS, onError)).toThrow();
+
+      const check = new DatabaseSync(file);
+      check.exec('INSERT INTO write_audit (created_at) VALUES (2)');
+      expect(check.prepare('SELECT COUNT(*) AS rows FROM write_audit').get()).toEqual({ rows: 2 });
+      check.close();
+      rmSync(directory, { recursive: true });
+    });
+
+    it('records a refused read like a refused write', () => {
+      log.record(write({ method: 'GET', outcome: 'verification-required', statusCode: 428 }), 1000);
+      expect(log.find()[0]).toEqual(expect.objectContaining({ method: 'GET', outcome: 'verification-required' }));
     });
 
     it('keeps its entries in the file across a restart', () => {

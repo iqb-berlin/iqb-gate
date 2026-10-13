@@ -16,8 +16,12 @@ describe('parseConfig', () => {
       trustProxy: false,
       timeouts: { defaultSeconds: 600, paths: [] },
       secret: expect.stringMatching(/^[0-9a-f]{64}$/),
+      challenges: { perAddressAndMinute: 120 },
       writeGate: {
         enforce: true, rules: [], exempt: [], burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined
+      },
+      readGate: {
+        enforce: true, rules: [], exempt: [], limit: { limit: 600, windowSeconds: 60 }, userClaim: undefined
       },
       pageGate: { enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [] },
       oidc: undefined,
@@ -131,6 +135,27 @@ describe('parseConfig', () => {
   it('takes the timeouts from the file', () => {
     const config = parseConfig(UPSTREAM, 'timeouts:\n  default: 120\n');
     expect(config.timeouts.defaultSeconds).toBe(120);
+  });
+});
+
+describe('challenges', () => {
+  const challengesOf = (text: string) => parseConfig(UPSTREAM, text).challenges;
+
+  it('hands out 120 challenges per address and minute unless the file says otherwise', () => {
+    expect(challengesOf('challenges: {}\n')).toEqual({ perAddressAndMinute: 120 });
+    expect(challengesOf('challenges:\n  perAddressAndMinute: 600\n')).toEqual({ perAddressAndMinute: 600 });
+  });
+
+  it('accepts only a positive whole number', () => {
+    ['0', '-1', '1.5', 'many'].forEach(value => {
+      expect(() => challengesOf(`challenges:\n  perAddressAndMinute: ${value}\n`))
+        .toThrow(/challenges.perAddressAndMinute has to be a positive whole number/);
+    });
+  });
+
+  it('rejects what it does not know', () => {
+    expect(() => challengesOf('challenges:\n  perAddress: 50\n')).toThrow(ConfigError);
+    expect(() => challengesOf('challenges: 50\n')).toThrow(/challenges has to be a mapping/);
   });
 });
 

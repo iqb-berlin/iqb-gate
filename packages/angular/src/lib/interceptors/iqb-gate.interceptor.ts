@@ -2,17 +2,17 @@ import {
   DOCUMENT, inject, Injectable, Injector, runInInjectionContext
 } from '@angular/core';
 import {
-  type HttpEvent, HttpErrorResponse, type HttpHandler, type HttpHandlerFn, type HttpInterceptor,
+  type HttpEvent, type HttpHandler, type HttpHandlerFn, type HttpInterceptor,
   type HttpInterceptorFn, type HttpRequest
 } from '@angular/common/http';
 import {
   catchError, type Observable, switchMap, throwError
 } from 'rxjs';
-import {
-  CLIENT_SIGNALS_HEADER, GATE_PREFIX, HUMAN_VERIFICATION_REQUIRED_STATUS, SAVING_METHODS
-} from '@iqb/gate-protocol';
+import { CLIENT_SIGNALS_HEADER, GATE_PREFIX } from '@iqb/gate-protocol';
 import { GateInputActivityService } from '../services/gate-input-activity.service';
 import { GateVerificationService } from '../services/gate-verification.service';
+import { GateRefusalNoticeService } from '../services/gate-refusal-notice.service';
+import { gateRefusalOf, isVerificationRequired } from '../gate-refusal';
 
 /**
  * Whether a request goes through the gateway in front of this page -- its own origin -- and is
@@ -30,33 +30,40 @@ function isGatedRequest(url: string, document: Document): boolean {
 }
 
 /**
- * The browser half of the check that writes come from a person (the gateway decides which writes
- * it checks). Every write to the page's own origin carries what the browser observed about itself
- * and its input. When the gateway answers 428, the challenge dialog opens, and the write is sent
- * again once it is solved; cancelled, the write fails with its 428.
+ * The browser half of the check that writes and reads come from a person (the gateway decides which
+ * of them it checks). Every request to the page's own origin carries what the browser observed about
+ * itself and its input. When the gateway answers 428, the challenge dialog opens, and the request is
+ * sent again once it is solved; cancelled, the request fails with its 428 -- the person knows why.
+ * When the gateway refuses the browser as automated, or asks again right after a solved challenge,
+ * a notice says so (`GateRefusalNoticeService`) and the request fails: an application leaves such
+ * errors out of its own display (`isGateRefusal`).
  *
- * Where the gateway checks nothing it ignores the header and never answers 428, so this changes
- * nothing there. Register it after the interceptor that adds the token, so that the repeated
+ * Where the gateway checks nothing it ignores the header and never answers 428 or refuses, so this
+ * changes nothing there. Register it after the interceptor that adds the token, so that the repeated
  * request carries it as well: `provideHttpClient(withInterceptors([..., iqbGateInterceptor]))`.
  */
 export const iqbGateInterceptor: HttpInterceptorFn = (
   req: HttpRequest<unknown>,
   next: HttpHandlerFn
 ): Observable<HttpEvent<unknown>> => {
-  if (!SAVING_METHODS.includes(req.method) || !isGatedRequest(req.url, inject(DOCUMENT))) return next(req);
+  if (!isGatedRequest(req.url, inject(DOCUMENT))) return next(req);
   const inputActivity = inject(GateInputActivityService);
-  // The dialog needs HttpClient, which needs the interceptors: fetched only when a 428 comes
+  // The dialogs need HttpClient, which needs the interceptors: fetched only when the gateway answers
   const injector = inject(Injector);
   const withSignals = () => req.clone({
     setHeaders: { [CLIENT_SIGNALS_HEADER]: JSON.stringify(inputActivity.signals()) }
   });
+  /** Tells the person why the gateway refused, and fails the request. */
+  const refused = (error: unknown) => {
+    const refusal = gateRefusalOf(error);
+    if (refusal) injector.get(GateRefusalNoticeService).show(refusal);
+    return throwError(() => error);
+  };
   return next(withSignals()).pipe(
     catchError((error: unknown) => {
-      if (!(error instanceof HttpErrorResponse) || error.status !== HUMAN_VERIFICATION_REQUIRED_STATUS) {
-        return throwError(() => error);
-      }
+      if (!isVerificationRequired(error)) return refused(error);
       return injector.get(GateVerificationService).verify().pipe(
-        switchMap(verified => (verified ? next(withSignals()) : throwError(() => error)))
+        switchMap(verified => (verified ? next(withSignals()).pipe(catchError(refused)) : throwError(() => error)))
       );
     })
   );

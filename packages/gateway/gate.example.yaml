@@ -17,8 +17,15 @@ timeouts:
     - prefix: /api/admin/workspace
       seconds: 1800
 
+# The challenge a session solves once for the write and the read gate. Each one costs the gateway a
+# key derivation, so a client address gets this many a minute (429 beyond); a class behind one
+# school address asks at once. Behind a proxy, IQB_GATE_TRUST_PROXY has to name it -- otherwise
+# every client has the proxy's address and shares this limit.
+challenges:
+  perAddressAndMinute: 120
+
 # Writes (POST, PUT, PATCH, DELETE) that have to come from a person. Needs IQB_GATE_SECRET;
-# IQB_GATE_ENFORCE=off switches the check off (e.g. for Cypress runs).
+# IQB_GATE_ENFORCE=off switches every check off (e.g. for Cypress runs).
 writeGate:
   # A write whose path matches one of the regular expressions is checked (case does not matter,
   # and the path is matched as sent and as the application reads it). The first matching rule
@@ -36,6 +43,22 @@ writeGate:
   # More writes than this within the window ask the session for a new challenge.
   burst: { limit: 30, windowSeconds: 60 }
   # The claim of the Bearer JWT the audit log names the writer by -- unverified, see the audit page.
+  userClaim: username
+
+# Reads (GET, HEAD) that have to come from a person's browser: the session solved a challenge --
+# the one of its login counts -- and the browser does not report automation. Needs IQB_GATE_SECRET;
+# IQB_GATE_READ_RULES_OFF switches rules off by name, independent of the write rules.
+readGate:
+  rules:
+    - { name: workspace, path: '^/api/workspaces/' }
+    - { name: other, path: '^/api/' }
+  # Never checked: what a page reads before the login, and files a script tag loads (no report)
+  exempt:
+    - { path: '^/api/admin/settings/(config|app-logo)$' }
+    - { path: '^/api/packages/' }
+    - { bearerPrefix: 'sl_' }
+  # More reads than this within the window ask the session for a new challenge.
+  limit: { limit: 600, windowSeconds: 60 }
   userClaim: username
 
 # Pages opened in a browser over HTTPS solve a proof-of-work once, as with Anubis, before they are

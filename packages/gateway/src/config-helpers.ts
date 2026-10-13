@@ -36,3 +36,49 @@ export function compilePattern(value: unknown, where: string): RegExp {
     throw new ConfigError(`${where} is no regular expression: ${(error as Error).message}`);
   }
 }
+
+/** A positive whole number from the file, or `fallback` where it gives none. */
+export function positiveIntegerAt(value: unknown, fallback: number, where: string): number {
+  const number = value ?? fallback;
+  if (!isPositiveInteger(number)) throw new ConfigError(`${where} has to be a positive whole number.`);
+  return number;
+}
+
+/** `IQB_GATE_ENFORCE`: `on` (the default) or `off`, which switches every check off. */
+export function parseEnforce(value: string | undefined): boolean {
+  const setting = value?.trim().toLowerCase() || 'on';
+  if (setting !== 'on' && setting !== 'off') throw new ConfigError(`IQB_GATE_ENFORCE is on or off, not ${value}.`);
+  return setting === 'on';
+}
+
+/** How many requests a session may make within a window (`writeGate.burst`, `readGate.limit`). */
+export function parseLimitWindow(
+  value: unknown, where: string, defaults: { limit: number; windowSeconds: number }
+): { limit: number; windowSeconds: number } {
+  if (value === undefined) return defaults;
+  if (!isMapping(value)) throw new ConfigError(`${where} has to be a mapping with limit and windowSeconds.`);
+  rejectUnknownKeys(value, ['limit', 'windowSeconds'], where);
+  const limit = value.limit ?? defaults.limit;
+  const windowSeconds = value.windowSeconds ?? defaults.windowSeconds;
+  if (!isPositiveInteger(limit)) throw new ConfigError(`${where}.limit has to be a positive whole number.`);
+  if (!isPositiveInteger(windowSeconds)) {
+    throw new ConfigError(`${where}.windowSeconds has to be a positive whole number.`);
+  }
+  return { limit, windowSeconds };
+}
+
+/** The claim of the Bearer JWT the audit log names a person by. */
+export function parseUserClaim(value: unknown, where: string): string | undefined {
+  if (value !== undefined && (typeof value !== 'string' || value === '')) {
+    throw new ConfigError(`${where} has to be the name of a claim, e.g. username.`);
+  }
+  return value as string | undefined;
+}
+
+/** The start of the script tokens an exemption lets through: a word, not a single letter. */
+export function parseBearerPrefix(value: unknown, where: string): string {
+  if (typeof value !== 'string' || value.length < 3) {
+    throw new ConfigError(`${where} has to be at least three characters.`);
+  }
+  return value;
+}

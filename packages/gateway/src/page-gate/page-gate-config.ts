@@ -1,5 +1,5 @@
 import {
-  compilePattern, ConfigError, isMapping, isPositiveInteger, listAt, rejectUnknownKeys
+  compilePattern, ConfigError, isMapping, listAt, positiveIntegerAt, rejectUnknownKeys
 } from '../config-helpers.js';
 
 export type PageAction = 'allow' | 'deny' | 'challenge';
@@ -45,12 +45,6 @@ function parseRule(entry: unknown, index: number): PagePolicyRule {
     ...(path !== undefined ? { path: compilePattern(path, `${where}.path`) } : {}),
     action: action as PageAction
   };
-}
-
-function positiveIntegerAt(value: unknown, fallback: number, where: string): number {
-  const number = value ?? fallback;
-  if (!isPositiveInteger(number)) throw new ConfigError(`${where} has to be a positive whole number.`);
-  return number;
 }
 
 /** Reads the `pageGate` section of the file; without one, the page gate is off. */

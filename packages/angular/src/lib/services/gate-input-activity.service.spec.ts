@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { GateInputActivityService } from './gate-input-activity.service';
+import { DEVTOOLS_PROBE_MS, GateInputActivityService } from './gate-input-activity.service';
 
 describe('GateInputActivityService', () => {
   let service: GateInputActivityService;
@@ -79,27 +79,67 @@ describe('GateInputActivityService', () => {
     expect(service.signals().msSinceTrustedInput).toBeNull();
   });
 
-  it('should look at the renderer while the page is idle, before the first write', () => {
-    const idle: Array<() => void> = [];
-    const requestIdleCallback = jest.fn((callback: () => void) => idle.push(callback));
-    Object.defineProperty(window, 'requestIdleCallback', { value: requestIdleCallback, configurable: true });
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({});
-    const idleService = TestBed.inject(GateInputActivityService);
-    getContextSpy.mockClear();
+  describe('the renderer', () => {
+    let idle: Array<() => void>;
+    let idleService: GateInputActivityService;
 
-    idle.forEach(callback => callback());
-    idleService.signals();
+    beforeEach(() => {
+      idle = [];
+      const requestIdleCallback = jest.fn((callback: () => void) => idle.push(callback));
+      Object.defineProperty(window, 'requestIdleCallback', { value: requestIdleCallback, configurable: true });
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({});
+      idleService = TestBed.inject(GateInputActivityService);
+      getContextSpy.mockClear();
+    });
 
-    expect(getContextSpy).toHaveBeenCalledTimes(1);
-    delete (window as { requestIdleCallback?: unknown }).requestIdleCallback;
+    afterEach(() => {
+      delete (window as { requestIdleCallback?: unknown }).requestIdleCallback;
+    });
+
+    it('should be looked at while the page is idle, and only then', () => {
+      idle.forEach(callback => callback());
+      idleService.signals();
+      idleService.signals();
+
+      expect(getContextSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // The first reads of a page go out before it is idle; a WebGL context would hold each of them up
+    it('should not be looked at on the way out of a request, and count as no until then', () => {
+      const signals = idleService.signals();
+
+      expect(getContextSpy).not.toHaveBeenCalled();
+      expect(signals.softwareRenderer).toBe(false);
+    });
   });
 
-  it('should look at the renderer only once', () => {
-    service.signals();
-    service.signals();
+  it('should look at the renderer right after the start where the browser has no idle callback', () => {
+    jest.useFakeTimers();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+    const startedService = TestBed.inject(GateInputActivityService);
+    getContextSpy.mockClear();
+
+    startedService.signals();
+    expect(getContextSpy).not.toHaveBeenCalled();
+    jest.runOnlyPendingTimers();
 
     expect(getContextSpy).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
+  // A page that loads sends a dozen reads: one probe line in the console, not a dozen
+  it('should probe for the DevTools protocol at most once per period', () => {
+    jest.useFakeTimers({ now: 0 });
+    service.signals();
+    service.signals();
+    expect(debugSpy).toHaveBeenCalledTimes(1);
+
+    jest.setSystemTime(DEVTOOLS_PROBE_MS);
+    service.signals();
+
+    expect(debugSpy).toHaveBeenCalledTimes(2);
   });
 
   it('should report what jsdom is: no webdriver, no headless browser', () => {

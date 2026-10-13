@@ -1,17 +1,17 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
-import type { WriteOutcome } from '../write-gate/write-gate.js';
+import type { GateOutcome } from '../session/gate-assessment.js';
 import { RepeatedRejections } from './repeated-rejections.js';
 
-/** One checked write as the gateway hands it over; the time and the repeats are set here. */
+/** One checked write or refused read as the gateway hands it over; the time and the repeats are set here. */
 export interface AuditRecord {
   /**
    * The session the request came with; `null` when it brought none (or one the gateway did not
-   * sign) -- a script without cookies, or a person's very first write. Such rejections fold
+   * sign) -- a script without cookies, or a person's very first request. Such rejections fold
    * together, so a script in a loop cannot flood the log by never keeping its cookie.
    */
   sessionId: string | null;
   /**
-   * Who writes: the name in an OpenID Connect token the gateway verified, or else a claim of the
+   * Who sent it: the name in an OpenID Connect token the gateway verified, or else a claim of the
    * Bearer JWT that nobody checked (see `unverifiedBearerClaim`) -- which {@link userVerified} tells.
    */
   user: string | null;
@@ -19,10 +19,10 @@ export interface AuditRecord {
   method: string;
   /** The path without the query. */
   path: string;
-  /** The name of the rule the write was checked under. */
+  /** The name of the rule the request was checked under. */
   rule: string;
   statusCode: number;
-  outcome: WriteOutcome;
+  outcome: GateOutcome;
   blockingSignals: string[];
   loggedSignals: string[];
 }
@@ -53,7 +53,7 @@ interface AuditRow {
   path: string;
   rule: string;
   status_code: number;
-  outcome: WriteOutcome;
+  outcome: GateOutcome;
   repeated: number;
   blocking_signals: string;
   logged_signals: string;
@@ -65,7 +65,7 @@ const MAX_LIMIT = 1000;
 const REPEAT_WINDOW_MS = 60 * 1000;
 
 const SCHEMA = `
-  CREATE TABLE IF NOT EXISTS write_audit (
+  CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at INTEGER NOT NULL,
     session_id TEXT,
@@ -80,7 +80,7 @@ const SCHEMA = `
     blocking_signals TEXT NOT NULL,
     logged_signals TEXT NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS write_audit_created_at ON write_audit (created_at);
+  CREATE INDEX IF NOT EXISTS audit_created_at ON audit (created_at);
 `;
 
 function toEntry(row: AuditRow): AuditEntry {
@@ -102,8 +102,8 @@ function toEntry(row: AuditRow): AuditEntry {
 }
 
 /**
- * The audit log of checked writes, in SQLite: who, when, which path under which rule, how it was
- * decided and answered. Neither the body nor the query is kept. Entries older than the retention
+ * The audit log of checked writes and refused reads, in SQLite: who, when, which path under which
+ * rule, how it was decided and answered. Neither the body nor the query is kept. Entries older than the retention
  * are deleted ({@link deleteExpired}).
  *
  * Writing an entry never fails a request: a failure is reported to `onError` and the request goes
@@ -124,26 +124,69 @@ export class AuditLog {
     private readonly onError: (message: string, error: unknown) => void
   ) {
     this.db = new DatabaseSync(file);
-    // With WAL, NORMAL loses at most the last entries on a power failure, never the file, and does
-    // not wait for the disk on every entry -- the event loop that serves all traffic would wait too
-    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
-    this.db.exec(SCHEMA);
-    this.addMissingColumns();
-    this.insert = this.db.prepare(`
-      INSERT INTO write_audit (
-        created_at, session_id, user, user_verified, method, path, rule, status_code, outcome,
-        blocking_signals, logged_signals
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    this.increment = this.db.prepare('UPDATE write_audit SET repeated = repeated + ? WHERE id = ?');
+    try {
+      // With WAL, NORMAL loses at most the last entries on a power failure, never the file, and does
+      // not wait for the disk on every entry -- the event loop that serves all traffic would wait too
+      this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+      this.adoptWriteAudit();
+      this.db.exec(SCHEMA);
+      this.addMissingColumns();
+      this.insert = this.db.prepare(`
+        INSERT INTO audit (
+          created_at, session_id, user, user_verified, method, path, rule, status_code, outcome,
+          blocking_signals, logged_signals
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      this.increment = this.db.prepare('UPDATE audit SET repeated = repeated + ? WHERE id = ?');
+    } catch (error) {
+      // The gateway does not start without its log; the file is left as it was, and unlocked
+      this.db.close();
+      throw error;
+    }
+  }
+
+  /**
+   * A log file from before reads were checked keeps its entries in a table named for writes: it is
+   * renamed once, with its index, and keeps every entry. Where both tables exist -- an older
+   * gateway ran again after this one had started -- what the older one wrote joins the log.
+   */
+  private adoptWriteAudit(): void {
+    const tables = (this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('write_audit', 'audit')")
+      .all() as Array<{ name: string }>).map(({ name }) => name);
+    if (!tables.includes('write_audit')) return;
+    if (!tables.includes('audit')) {
+      this.inTransaction('ALTER TABLE write_audit RENAME TO audit; DROP INDEX IF EXISTS write_audit_created_at;');
+      return;
+    }
+    const auditColumns = this.columnsOf('audit');
+    const columns = this.columnsOf('write_audit')
+      .filter(column => column !== 'id' && auditColumns.includes(column))
+      .join(', ');
+    this.inTransaction(`INSERT INTO audit (${columns}) SELECT ${columns} FROM write_audit; DROP TABLE write_audit;`);
+  }
+
+  /** Runs the statements all or none: a step that fails leaves the file as it was. */
+  private inTransaction(statements: string): void {
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec(statements);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private columnsOf(table: string): string[] {
+    return (this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
+      .map(column => column.name);
   }
 
   /** A log file from before a column existed gets it, with its default for the old entries. */
   private addMissingColumns(): void {
-    const columns = (this.db.prepare('PRAGMA table_info(write_audit)').all() as Array<{ name: string }>)
-      .map(column => column.name);
-    if (!columns.includes('user_verified')) {
-      this.db.exec('ALTER TABLE write_audit ADD COLUMN user_verified INTEGER NOT NULL DEFAULT 0');
+    if (!this.columnsOf('audit').includes('user_verified')) {
+      this.db.exec('ALTER TABLE audit ADD COLUMN user_verified INTEGER NOT NULL DEFAULT 0');
     }
   }
 
@@ -157,7 +200,7 @@ export class AuditLog {
       );
       if (kind) this.rejections.opened(kind, Number(result.lastInsertRowid), now);
     } catch (error) {
-      this.onError('Writing the audit entry of a write failed.', error);
+      this.onError('Writing an audit entry failed.', error);
     }
   }
 
@@ -202,7 +245,7 @@ export class AuditLog {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = Math.min(Math.max(filter.limit || DEFAULT_LIMIT, 1), MAX_LIMIT);
     const rows = this.db
-      .prepare(`SELECT * FROM write_audit ${where} ORDER BY created_at DESC, id DESC LIMIT ?`)
+      .prepare(`SELECT * FROM audit ${where} ORDER BY created_at DESC, id DESC LIMIT ?`)
       .all(...values, limit) as unknown as AuditRow[];
     return rows.map(toEntry);
   }
@@ -210,7 +253,7 @@ export class AuditLog {
   /** Deletes the entries past their retention; returns how many. */
   deleteExpired(now = Date.now()): number {
     try {
-      const result = this.db.prepare('DELETE FROM write_audit WHERE created_at < ?').run(now - this.retentionMs);
+      const result = this.db.prepare('DELETE FROM audit WHERE created_at < ?').run(now - this.retentionMs);
       return Number(result.changes);
     } catch (error) {
       this.onError('Removing expired audit entries failed.', error);

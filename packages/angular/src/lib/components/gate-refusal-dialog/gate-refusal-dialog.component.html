@@ -1,0 +1,13 @@
+<h1 mat-dialog-title>{{ texts.refusalTitle }}</h1>
+<div mat-dialog-content>
+  <p class="gate-refusal-message" data-cy="gate-refusal-message">{{ message }}</p>
+</div>
+<div mat-dialog-actions align="end">
+  <button mat-raised-button
+          color="primary"
+          class="gate-refusal-close"
+          data-cy="gate-refusal-close"
+          [mat-dialog-close]="true">
+    {{ texts.close }}
+  </button>
+</div>

@@ -1,5 +1,5 @@
 /**
- * The audit page at `/.iqb-gate/admin/`: a table of the checked writes, read from
+ * The audit page at `/.iqb-gate/admin/`: a table of the checked writes and refused reads, read from
  * `/.iqb-gate/admin/audit` with the credentials the browser asked for. Everything that comes from
  * the log is put in as text, never as HTML: paths and user claims are what clients sent.
  */
@@ -19,7 +19,7 @@ export const AUDIT_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>iqb-gate · Schreibzugriffe</title>
+<title>iqb-gate · Zugriffe</title>
 <style>
   :root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 14px; }
   body { margin: 16px; }
@@ -40,8 +40,9 @@ export const AUDIT_PAGE = `<!doctype html>
 </style>
 </head>
 <body>
-<h1>Schreibzugriffe</h1>
-<p class="hint">Alle geprüften Schreibzugriffe, die neuesten zuerst. Ein Nutzer mit &#10003; stammt aus einem Token,
+<h1>Zugriffe</h1>
+<p class="hint">Alle geprüften Schreibzugriffe und die abgelehnten Lesezugriffe (GET), die neuesten zuerst.
+Ein Nutzer mit &#10003; stammt aus einem Token,
 das das Gateway beim Anmeldedienst geprüft hat. Ohne &#10003; stammt er ungeprüft aus dem Token der Anfrage;
 verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung das Token angenommen.</p>
 <form id="filter">

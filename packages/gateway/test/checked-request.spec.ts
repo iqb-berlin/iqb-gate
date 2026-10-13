@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { checkedWrite } from '../../src/write-gate/write-check.js';
+import { READING_METHODS, SAVING_METHODS } from '@iqb/gate-protocol';
+import { checkedRequest } from '../src/checked-request.js';
 
-const CONFIG = {
+const WRITES = {
   enforce: true,
   rules: [
     { name: 'administration', path: /^\/api\/(admin|group-admin|workspace-groups)\//i },
@@ -14,13 +15,14 @@ const CONFIG = {
   ]
 };
 
-const check = (method: string, url: string, authorization?: string) => checkedWrite(
-  CONFIG, { method, url, authorization }
+const check = (method: string, url: string, authorization?: string) => checkedRequest(SAVING_METHODS, 
+  WRITES, { method, url, authorization }
 )?.rule ?? null;
 
-describe('checkedWrite', () => {
+describe('checkedRequest for writes', () => {
   it('hands back the path as it arrived, without the query', () => {
-    expect(checkedWrite(CONFIG, { method: 'PATCH', url: '/api/%61dmin/users?x=1', authorization: undefined }))
+    const request = { method: 'PATCH', url: '/api/%61dmin/users?x=1', authorization: undefined };
+    expect(checkedRequest(SAVING_METHODS, WRITES, request))
       .toEqual({ rule: 'administration', path: '/api/%61dmin/users' });
   });
 
@@ -72,19 +74,19 @@ describe('checkedWrite', () => {
 
   it('checks nothing when not enforced', () => {
     const request = { method: 'PATCH', url: '/api/admin/x', authorization: undefined };
-    expect(checkedWrite({ ...CONFIG, enforce: false }, request)).toBeNull();
+    expect(checkedRequest(SAVING_METHODS, { ...WRITES, enforce: false }, request)).toBeNull();
   });
 
   describe('with a rule switched off', () => {
     const withCatchAll = {
-      ...CONFIG,
+      ...WRITES,
       rules: [
-        { ...CONFIG.rules[0] },
-        { ...CONFIG.rules[1], off: true },
+        { ...WRITES.rules[0] },
+        { ...WRITES.rules[1], off: true },
         { name: 'other', path: /^\/api\//i }
       ]
     };
-    const checkOff = (method: string, url: string) => checkedWrite(
+    const checkOff = (method: string, url: string) => checkedRequest(SAVING_METHODS, 
       withCatchAll, { method, url, authorization: undefined }
     )?.rule ?? null;
 
@@ -103,5 +105,61 @@ describe('checkedWrite', () => {
       expect(checkOff('PATCH', '/api/workspaces/5/%2e%2e/%2e%2e/login')).toBe('other');
       expect(checkOff('PATCH', '/API/%77orkspaces/5')).toBe('other');
     });
+  });
+});
+
+
+const READS = {
+  enforce: true,
+  rules: [
+    { name: 'administration', path: /^\/api\/(admin|group-admin|workspace-groups)\//i },
+    { name: 'workspace', path: /^\/api\/workspaces\//i },
+    { name: 'other', path: /^\/api\//i }
+  ],
+  exempt: [
+    { path: /^\/api\/admin\/settings\/(config|app-logo)$/i },
+    { path: /^\/api\/packages\//i },
+    { bearerPrefix: 'sl_' }
+  ]
+};
+
+const checkRead = (method: string, url: string, authorization?: string) => checkedRequest(READING_METHODS, 
+  READS, { method, url, authorization }
+)?.rule ?? null;
+
+describe('checkedRequest for reads', () => {
+  it('checks a read under a rule, and hands back the path as it arrived without the query', () => {
+    const request = { method: 'GET', url: '/api/workspaces/5/units?x=1', authorization: undefined };
+    expect(checkedRequest(READING_METHODS, READS, request))
+      .toEqual({ rule: 'workspace', path: '/api/workspaces/5/units' });
+    expect(checkRead('HEAD', '/api/admin/users')).toBe('administration');
+    expect(checkRead('GET', '/api/my-data')).toBe('other');
+  });
+
+  it('never checks a write or an OPTIONS request', () => {
+    expect(checkRead('POST', '/api/workspaces/5')).toBeNull();
+    expect(checkRead('OPTIONS', '/api/workspaces/5')).toBeNull();
+  });
+
+  it('checks nothing outside the rules', () => {
+    expect(checkRead('GET', '/')).toBeNull();
+    expect(checkRead('GET', '/assets/i18n/de.json')).toBeNull();
+  });
+
+  it('lets exempted reads through, but only when both spellings of the path are exempt', () => {
+    expect(checkRead('GET', '/api/admin/settings/config')).toBeNull();
+    expect(checkRead('GET', '/api/packages/GeoGebra/deployggb.js')).toBeNull();
+    expect(checkRead('GET', '/api/packages/../workspaces/5/units')).toBe('workspace');
+  });
+
+  it('lets script tokens the application checks itself through', () => {
+    expect(checkRead('GET', '/api/workspaces/5', 'Bearer sl_1_secret')).toBeNull();
+    expect(checkRead('GET', '/api/workspaces/5', 'Bearer eyJ.x.y')).toBe('workspace');
+  });
+
+  it('checks nothing when not enforced', () => {
+    const request = { method: 'GET', url: '/api/x', authorization: undefined };
+    expect(checkedRequest(READING_METHODS, { ...READS, enforce: false }, request))
+      .toBeNull();
   });
 });

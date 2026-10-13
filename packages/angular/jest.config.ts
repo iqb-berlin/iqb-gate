@@ -11,8 +11,8 @@ const config: Config = {
       { tsconfig: '<rootDir>/tsconfig.spec.json', stringifyContentPathRegex: '\\.(html|svg)$' }
     ]
   },
-  // The protocol is an ES module; it is compiled for the tests like the library itself
-  transformIgnorePatterns: ['node_modules/(?!.*\\.mjs$|@iqb/gate-protocol)']
+  // The protocol needs no entry: Jest requires it, and it ships CommonJS for that
+  transformIgnorePatterns: ['node_modules/(?!.*\\.mjs$)']
 };
 
 export default config;

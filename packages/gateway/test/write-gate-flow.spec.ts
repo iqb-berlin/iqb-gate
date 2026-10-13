@@ -84,12 +84,17 @@ describe('the write gate', () => {
   let gateway: FastifyInstance;
   let base: string;
 
-  const startGateway = async (changes: Partial<GatewayConfig['writeGate']> = {}, audit = {}) => {
+  const startGateway = async (
+    changes: Partial<GatewayConfig['writeGate']> = {},
+    audit = {},
+    gatewayChanges: Partial<GatewayConfig> = {}
+  ) => {
     const started = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
       writeGate: {
         enforce: true, burst: { limit: 30, windowSeconds: 60 }, userClaim: 'username', ...STUDIO_LITE_RULES, ...changes
       },
-      audit: { file: ':memory:', retentionDays: 90, key: AUDIT_KEY, ...audit }
+      audit: { file: ':memory:', retentionDays: 90, key: AUDIT_KEY, ...audit },
+      ...gatewayChanges
     }), false);
     await started.listen({ host: '127.0.0.1', port: 0 });
     return { started, url: origin(started.server.address() as AddressInfo) };
@@ -200,15 +205,14 @@ describe('the write gate', () => {
   });
 
   // A challenge costs the gateway a key derivation: a loop must not keep it busy
-  it('hands each address only so many challenges a minute', async () => {
-    const { started, url } = await startGateway();
+  it('hands each address only as many challenges a minute as configured', async () => {
+    const { started, url } = await startGateway({}, {}, { challenges: { perAddressAndMinute: 5 } });
     const cookie = await startedSession(url);
-    const statuses = await Array.from({ length: 31 }).reduce<Promise<number[]>>(
+    const statuses = await Array.from({ length: 6 }).reduce<Promise<number[]>>(
       async (earlier) => [...await earlier, (await fetch(`${url}${CHALLENGE_PATH}`, { headers: { cookie } })).status],
       Promise.resolve([])
     );
-    expect(statuses.slice(0, 30).every(status => status === 200)).toBe(true);
-    expect(statuses[30]).toBe(429);
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
     await started.close();
   });
 
@@ -368,7 +372,7 @@ describe('the write gate', () => {
       expect(response.headers.get('content-type')).toMatch(/^text\/html/);
       expect(response.headers.get('content-security-policy')).toMatch(/default-src 'none'/);
       expect(response.headers.get('cache-control')).toBe('no-store');
-      expect(await response.text()).toContain('<title>iqb-gate · Schreibzugriffe</title>');
+      expect(await response.text()).toContain('<title>iqb-gate · Zugriffe</title>');
     });
 
     it('does not exist without a key', async () => {

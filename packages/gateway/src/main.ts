@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { ConfigError, parseConfig, type GatewayEnv } from './config.js';
+import { readConfigFile } from './config-file.js';
 import { buildGateway } from './gateway.js';
 
 /**
@@ -7,10 +7,6 @@ import { buildGateway } from './gateway.js';
  * them: below Docker's default of 10 seconds before it kills the container.
  */
 const SHUTDOWN_GRACE_MS = 8000;
-
-function readConfigFile(env: GatewayEnv): string | undefined {
-  return env.IQB_GATE_CONFIG ? readFileSync(env.IQB_GATE_CONFIG, 'utf8') : undefined;
-}
 
 async function main(): Promise<void> {
   const env = process.env as GatewayEnv;

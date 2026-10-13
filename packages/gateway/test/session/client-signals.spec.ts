@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type ClientSignals, TRUSTED_INPUT_WINDOW_MS } from '@iqb/gate-protocol';
-import { evaluateClientSignals } from '../../src/write-gate/client-signals.js';
+import { evaluateClientSignals } from '../../src/session/client-signals.js';
 
 describe('evaluateClientSignals', () => {
   // What a person's browser reports: nothing automated, a click a moment ago

@@ -6,7 +6,7 @@ import { AsyncPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButton } from '@angular/material/button';
 import { Subject, takeUntil } from 'rxjs';
-import { isAutomationDetected, IqbOidcService } from '@iqb/gate-angular';
+import { isGateRefusal, IqbOidcService } from '@iqb/gate-angular';
 
 interface Note {
   text: string;
@@ -44,7 +44,7 @@ export class AppComponent implements OnDestroy {
         this.note.set(note);
         this.text = note.text;
       },
-      error: (error: HttpErrorResponse) => this.status.set(`Laden fehlgeschlagen (${error.status}).`)
+      error: (error: HttpErrorResponse) => this.reportError('Laden fehlgeschlagen', error)
     });
   }
 
@@ -55,14 +55,20 @@ export class AppComponent implements OnDestroy {
         this.note.set(note);
         this.status.set(`Gespeichert von ${note.by}.`);
       },
-      error: (error: unknown) => {
-        if (isAutomationDetected(error)) {
-          this.status.set('Abgelehnt: Der Browser meldet sich als automatisiert.');
-        } else {
-          this.status.set(`Nicht gespeichert (${error instanceof HttpErrorResponse ? error.status : 'Fehler'}).`);
-        }
-      }
+      error: (error: unknown) => this.reportError('Nicht gespeichert', error)
     });
+  }
+
+  /**
+   * Says what went wrong -- unless the gateway refused the request: the library has told the person
+   * why already, or they cancelled the challenge themselves.
+   */
+  private reportError(what: string, error: unknown): void {
+    if (isGateRefusal(error)) {
+      this.status.set('');
+      return;
+    }
+    this.status.set(`${what} (${error instanceof HttpErrorResponse ? error.status : 'Fehler'}).`);
   }
 
   ngOnDestroy(): void {

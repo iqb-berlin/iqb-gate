@@ -2,9 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { parse } from 'yaml';
 import { GATE_PREFIX } from '@iqb/gate-protocol';
 import {
-  ConfigError, isMapping, isPositiveInteger, listAt, rejectUnknownKeys
+  ConfigError, isMapping, isPositiveInteger, listAt, positiveIntegerAt, rejectUnknownKeys
 } from './config-helpers.js';
-import { hasActiveRules, parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
+import { parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
+import { parseReadGate, type ReadGateConfig } from './read-gate/read-gate-config.js';
+import { hasActiveRules } from './path-rules.js';
 import { type PageGateConfig, parsePageGate } from './page-gate/page-gate-config.js';
 import { type OidcConfig, parseOidc } from './oidc-config.js';
 
@@ -22,7 +24,7 @@ export interface PathUpstream {
   upstream: string;
 }
 
-/** Where the audit log of checked writes is kept, for how long, and who may read it. */
+/** Where the audit log of checked writes and refused reads is kept, for how long, and who may read it. */
 export interface AuditConfig {
   /** The SQLite file; `:memory:` keeps it in memory (tests). */
   file: string;
@@ -46,7 +48,13 @@ export interface GatewayConfig {
   };
   /** Signs the session cookie and the ALTCHA challenges. */
   secret: string;
+  /** The challenge a session solves for the write and the read gate. */
+  challenges: {
+    /** Challenges per client address and minute; a class behind one school address asks at once. */
+    perAddressAndMinute: number;
+  };
   writeGate: WriteGateConfig;
+  readGate: ReadGateConfig;
   pageGate: PageGateConfig;
   /** The provider whose tokens name the writers in the audit log; without it, they go unverified. */
   oidc: OidcConfig | undefined;
@@ -57,7 +65,7 @@ export interface GatewayConfig {
 export type GatewayEnv = Partial<Record<
   'IQB_GATE_UPSTREAM' | 'IQB_GATE_HOST' | 'IQB_GATE_PORT' | 'IQB_GATE_TRUST_PROXY' | 'IQB_GATE_CONFIG' |
   'IQB_GATE_ENFORCE' | 'IQB_GATE_SECRET' | 'IQB_GATE_AUDIT_FILE' | 'IQB_GATE_AUDIT_RETENTION_DAYS' |
-  'IQB_GATE_AUDIT_KEY' | 'IQB_GATE_RULES_OFF',
+  'IQB_GATE_AUDIT_KEY' | 'IQB_GATE_RULES_OFF' | 'IQB_GATE_READ_RULES_OFF',
   string
 >>;
 
@@ -65,6 +73,8 @@ const DEFAULT_PORT = 8080;
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const DEFAULT_AUDIT_FILE = '/var/lib/iqb-gate/audit.sqlite';
 const DEFAULT_AUDIT_RETENTION_DAYS = 90;
+/** As many as the page gate's: a class behind one school address asks at once. */
+const DEFAULT_CHALLENGES_PER_ADDRESS_AND_MINUTE = 120;
 const MIN_SECRET_LENGTH = 32;
 
 /** An upstream's origin; `where` names the setting in the error. */
@@ -175,17 +185,35 @@ function parseTimeouts(section: unknown): GatewayConfig['timeouts'] {
   return { defaultSeconds, paths };
 }
 
+/** Reads the `challenges` section; an absent one means the default. */
+function parseChallenges(section: unknown): GatewayConfig['challenges'] {
+  const challenges = section ?? {};
+  if (!isMapping(challenges)) throw new ConfigError('challenges has to be a mapping with perAddressAndMinute.');
+  rejectUnknownKeys(challenges, ['perAddressAndMinute'], 'challenges');
+  return {
+    perAddressAndMinute: positiveIntegerAt(
+      challenges.perAddressAndMinute,
+      DEFAULT_CHALLENGES_PER_ADDRESS_AND_MINUTE,
+      'challenges.perAddressAndMinute'
+    )
+  };
+}
+
 /** The file's sections; an absent or empty file has none. */
 function parseFile(yamlText: string | undefined): Record<string, unknown> {
   const file: unknown = yamlText ? parse(yamlText) : null;
   if (file === null || file === undefined) return {};
   if (!isMapping(file)) throw new ConfigError('The configuration file has to be a mapping.');
-  rejectUnknownKeys(file, ['upstreams', 'timeouts', 'writeGate', 'pageGate', 'oidc'], 'The configuration file');
+  rejectUnknownKeys(
+    file,
+    ['upstreams', 'timeouts', 'challenges', 'writeGate', 'readGate', 'pageGate', 'oidc'],
+    'The configuration file'
+  );
   return file;
 }
 
 /**
- * The gateway's secret. Required once writes are checked or pages gated: the cookies and challenges
+ * The gateway's secret. Required once writes or reads are checked or pages gated: the cookies and challenges
  * it signs have to stay valid across a restart. Without either, a random one does.
  */
 function parseSecret(value: string | undefined, required: boolean): string {
@@ -195,7 +223,9 @@ function parseSecret(value: string | undefined, required: boolean): string {
     }
     return value;
   }
-  if (required) throw new ConfigError('IQB_GATE_SECRET is required when writeGate has rules or pageGate is enabled.');
+  if (required) {
+    throw new ConfigError('IQB_GATE_SECRET is required when writeGate or readGate has rules or pageGate is enabled.');
+  }
   return randomBytes(32).toString('hex');
 }
 
@@ -221,7 +251,8 @@ function parseAuditKey(value: string | undefined): string | undefined {
 export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayConfig {
   const file = parseFile(configFileText);
   const writeGate = parseWriteGate(file.writeGate, env.IQB_GATE_ENFORCE, env.IQB_GATE_RULES_OFF);
-  // IQB_GATE_ENFORCE=off switches off both gates, for test runs
+  const readGate = parseReadGate(file.readGate, env.IQB_GATE_ENFORCE, env.IQB_GATE_READ_RULES_OFF);
+  // IQB_GATE_ENFORCE=off switches off every gate, for test runs
   const configuredPageGate = parsePageGate(file.pageGate);
   const pageGate = { ...configuredPageGate, enabled: configuredPageGate.enabled && writeGate.enforce };
   const trustProxy = parseTrustProxy(env.IQB_GATE_TRUST_PROXY);
@@ -238,9 +269,13 @@ export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayCo
     timeouts: parseTimeouts(file.timeouts),
     secret: parseSecret(
       env.IQB_GATE_SECRET,
-      (writeGate.enforce && hasActiveRules(writeGate)) || pageGate.enabled
+      (writeGate.enforce && hasActiveRules(writeGate.rules))
+        || (readGate.enforce && hasActiveRules(readGate.rules))
+        || pageGate.enabled
     ),
+    challenges: parseChallenges(file.challenges),
     writeGate,
+    readGate,
     pageGate,
     oidc: parseOidc(file.oidc),
     audit: {

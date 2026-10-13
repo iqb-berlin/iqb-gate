@@ -13,7 +13,7 @@ import type { ClientOptions } from 'ws';
 import { GATE_PREFIX, type GatewayConfig } from './config.js';
 import { forwardedHeaders } from './forwarded-headers.js';
 import { timeoutSecondsFor } from './timeouts.js';
-import { installWriteGate } from './write-gate/install-write-gate.js';
+import { installGates } from './install-gates.js';
 import { installPageGate } from './page-gate/install-page-gate.js';
 import { deriveSecret } from './proof-of-work.js';
 import { inTurn } from './gate-pre-handler.js';
@@ -68,7 +68,8 @@ function replyUpstreamError(reply: FastifyReply<RouteGenericInterface, RawServer
  * answers, the client gets: no retries, no limit on parallel connections.
  *
  * The protections hang into this proxy as checks before a request is passed on: the page gate for
- * pages opened in a browser (`installPageGate`), the write gate for writes (`installWriteGate`).
+ * pages opened in a browser (`installPageGate`), the write and read gates for API requests
+ * (`installGates`).
  */
 export async function buildGateway(
   config: GatewayConfig,
@@ -88,10 +89,10 @@ export async function buildGateway(
   }));
 
   // Cookies are parsed where a gate reads them, not for every request through the gateway; the
-  // write gate's session cookie is signed with this secret
+  // session cookie of the write and read gates is signed with this secret
   await gateway.register(fastifyCookie, { secret: deriveSecret(config.secret, 'session-cookie'), hook: false });
-  const checks = [installPageGate(gateway, config), installWriteGate(gateway, config)]
-    .filter(check => check !== undefined);
+  const pageGate = installPageGate(gateway, config);
+  const checks = [...(pageGate ? [pageGate] : []), ...installGates(gateway, config)];
 
   // Documented by the plugin, but missing from its typings -- hence declared here, not inline.
   const wsClientOptions: ClientOptions & {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unverifiedBearerClaim } from '../../src/write-gate/unverified-claim.js';
+import { unverifiedBearerClaim } from '../../src/audit/unverified-claim.js';
 
 const jwt = (payload: object) => [
   Buffer.from('{"alg":"HS256"}').toString('base64url'),

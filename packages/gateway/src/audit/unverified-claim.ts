@@ -1,4 +1,4 @@
-/** Longer claims are cut: the audit log names a writer, it does not store what a client sends. */
+/** Longer claims are cut: the audit log names a person, it does not store what a client sends. */
 const MAX_CLAIM_LENGTH = 200;
 
 /** The JWT of an `Authorization: Bearer` header; `null` for any other header, or none. */

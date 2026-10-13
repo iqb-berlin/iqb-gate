@@ -60,7 +60,8 @@ function replyUpstreamError(reply: FastifyReply<RouteGenericInterface, RawServer
 }
 
 /**
- * The gateway: a reverse proxy in front of one app. It streams request and response bodies
+ * The gateway: a reverse proxy in front of one app -- its upstream, and for path prefixes of their own
+ * an upstream each (the API, say, straight to the backend). It streams request and response bodies
  * without buffering or limiting them (uploads of several gigabytes, server-sent events), passes
  * WebSockets through, and gives the upstream a timeout per path prefix -- the time it may stay
  * silent, as nginx's `proxy_read_timeout`, not a limit on the whole transfer. What the upstream
@@ -99,8 +100,7 @@ export async function buildGateway(
     rewriteRequestHeaders: (_headers, request) => websocketHeaders(request)
   };
 
-  await gateway.register(httpProxy, {
-    upstream: config.upstream,
+  const proxyOptions = {
     // reply-from's pool allows 128 connections by default: long uploads and event streams would
     // make every further request wait.
     undici: { connections: null },
@@ -110,11 +110,25 @@ export async function buildGateway(
       // reply-from repeats a GET the upstream answered with 503; the client should see that 503.
       retryDelay: () => null
     },
-    handler: (request, reply, dest, options) => reply.from(dest, {
+    handler: (request: ProxiedRequest, reply: FastifyReply<RouteGenericInterface, RawServerBase>,
+      dest: string, options: Parameters<FastifyReply['from']>[1]) => reply.from(dest, {
       ...options,
       timeout: timeoutSecondsFor(request.url, config.timeouts) * 1000
     }),
-    ...(checks.length ? { preHandler: inTurn(checks) } : {}),
+    ...(checks.length ? { preHandler: inTurn(checks) } : {})
+  };
+
+  // A prefix of its own takes its requests away from the upstream at /, which keeps the WebSockets:
+  // a proxy mounted at / takes every upgrade.
+  await Promise.all(config.upstreams.map(({ prefix, upstream }) => gateway.register(httpProxy, {
+    ...proxyOptions,
+    upstream,
+    prefix,
+    rewritePrefix: prefix
+  })));
+  await gateway.register(httpProxy, {
+    ...proxyOptions,
+    upstream: config.upstream,
     websocket: true,
     wsClientOptions
   });

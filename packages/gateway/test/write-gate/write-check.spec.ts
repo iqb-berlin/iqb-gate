@@ -74,4 +74,34 @@ describe('checkedWrite', () => {
     const request = { method: 'PATCH', url: '/api/admin/x', authorization: undefined };
     expect(checkedWrite({ ...CONFIG, enforce: false }, request)).toBeNull();
   });
+
+  describe('with a rule switched off', () => {
+    const withCatchAll = {
+      ...CONFIG,
+      rules: [
+        { ...CONFIG.rules[0] },
+        { ...CONFIG.rules[1], off: true },
+        { name: 'other', path: /^\/api\//i }
+      ]
+    };
+    const checkOff = (method: string, url: string) => checkedWrite(
+      withCatchAll, { method, url, authorization: undefined }
+    )?.rule ?? null;
+
+    it('lets its writes through, also past a catch-all further down', () => {
+      expect(checkOff('PATCH', '/api/workspaces/5/units/9')).toBeNull();
+      expect(checkOff('PATCH', '/API/workspaces/5')).toBeNull();
+    });
+
+    it('still checks under the other rules', () => {
+      expect(checkOff('PATCH', '/api/admin/users/3')).toBe('administration');
+      expect(checkOff('POST', '/api/login')).toBe('other');
+    });
+
+    it('does not let through what it only covers in one spelling', () => {
+      expect(checkOff('PATCH', '/api/workspaces/5/../../admin/users/3')).toBe('administration');
+      expect(checkOff('PATCH', '/api/workspaces/5/%2e%2e/%2e%2e/login')).toBe('other');
+      expect(checkOff('PATCH', '/API/%77orkspaces/5')).toBe('other');
+    });
+  });
 });

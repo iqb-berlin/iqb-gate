@@ -4,6 +4,7 @@ import type { GatewayConfig } from '../../src/config.js';
 export function testConfig(upstream: string, changes: Partial<GatewayConfig> = {}): GatewayConfig {
   return {
     upstream,
+    upstreams: [],
     host: '127.0.0.1',
     port: 0,
     trustProxy: false,

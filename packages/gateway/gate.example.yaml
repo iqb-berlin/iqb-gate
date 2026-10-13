@@ -2,6 +2,11 @@
 # Without a file every request gets the default timeout and no write is checked.
 # Unknown keys stop the gateway at start, so a misspelling cannot pass unnoticed.
 
+# Path prefixes with an upstream of their own; everything else goes to IQB_GATE_UPSTREAM, and so
+# do WebSockets. studio-lite: the API straight to the backend, as Traefik routed it before.
+upstreams:
+  - { prefix: /api, upstream: 'http://backend:3333' }
+
 timeouts:
   # Seconds the app may stay silent before the gateway answers 504 -- like nginx's
   # proxy_read_timeout, not a limit on the whole transfer: an upload that keeps moving may
@@ -16,7 +21,9 @@ timeouts:
 # IQB_GATE_ENFORCE=off switches the check off (e.g. for Cypress runs).
 writeGate:
   # A write whose path matches one of the regular expressions is checked (case does not matter,
-  # and the path is matched as sent and as the application reads it).
+  # and the path is matched as sent and as the application reads it). The first matching rule
+  # decides, for each of the two spellings; the write is checked when either rule is on.
+  # IQB_GATE_RULES_OFF=workspace switches one off for an installation.
   rules:
     - { name: administration, path: '^/api/(admin|group-admin|workspace-groups)/' }
     - { name: workspace, path: '^/api/workspaces/[^/]+(/|$)' }

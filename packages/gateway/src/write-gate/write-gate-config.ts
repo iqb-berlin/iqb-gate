@@ -7,6 +7,11 @@ import {
 export interface WriteRule {
   name: string;
   path: RegExp;
+  /**
+   * Switched off for this installation (`IQB_GATE_RULES_OFF`): its writes pass unchecked. The rule
+   * still claims them, so that a rule further down -- a catch-all -- does not check them instead.
+   */
+  off?: boolean;
 }
 
 /** Writes that are never checked: all conditions given have to hold. */
@@ -79,8 +84,29 @@ function parseEnforce(value: string | undefined): boolean {
   return setting === 'on';
 }
 
-/** Reads the `writeGate` section of the file, and `IQB_GATE_ENFORCE`. */
-export function parseWriteGate(section: unknown, enforceSetting: string | undefined): WriteGateConfig {
+/**
+ * The rule names `IQB_GATE_RULES_OFF` lists, comma-separated. A name no rule has stops the gateway:
+ * a typo would otherwise leave on what was meant to be off -- or, read the other way, hide that a
+ * rule has been renamed.
+ */
+function parseRulesOff(value: string | undefined, rules: WriteRule[]): Set<string> {
+  const names = (value ?? '').split(',').map(name => name.trim()).filter(name => name !== '');
+  const unknown = names.find(name => !rules.some(rule => rule.name === name));
+  if (unknown) {
+    throw new ConfigError(`IQB_GATE_RULES_OFF names ${unknown}, which no rule in writeGate.rules has.`);
+  }
+  return new Set(names);
+}
+
+/** Whether any rule is left to check writes under. */
+export function hasActiveRules(config: Pick<WriteGateConfig, 'rules'>): boolean {
+  return config.rules.some(rule => !rule.off);
+}
+
+/** Reads the `writeGate` section of the file, `IQB_GATE_ENFORCE` and `IQB_GATE_RULES_OFF`. */
+export function parseWriteGate(
+  section: unknown, enforceSetting: string | undefined, rulesOffSetting?: string
+): WriteGateConfig {
   const gate = section ?? {};
   if (!isMapping(gate)) throw new ConfigError('writeGate has to be a mapping.');
   rejectUnknownKeys(gate, ['rules', 'exempt', 'burst', 'userClaim'], 'writeGate');
@@ -90,9 +116,10 @@ export function parseWriteGate(section: unknown, enforceSetting: string | undefi
   if (gate.userClaim !== undefined && (typeof gate.userClaim !== 'string' || gate.userClaim === '')) {
     throw new ConfigError('writeGate.userClaim has to be the name of a claim, e.g. username.');
   }
+  const rulesOff = parseRulesOff(rulesOffSetting, rules);
   return {
     enforce: parseEnforce(enforceSetting),
-    rules,
+    rules: rules.map(rule => (rulesOff.has(rule.name) ? { ...rule, off: true } : rule)),
     exempt: listAt(gate.exempt, 'writeGate.exempt').map(parseExemption),
     burst: parseBurst(gate.burst),
     userClaim: gate.userClaim as string | undefined

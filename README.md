@@ -3,7 +3,7 @@
 A security gateway for the IQB applications -- studio-lite, Testcenter and coding-box. It sits in
 front of an application as a reverse proxy and will offer, step by step:
 
-1. **a transparent proxy** -- streaming, WebSockets, server-sent events, timeouts per path *(done)*
+1. **a transparent proxy** -- streaming, WebSockets, server-sent events, timeouts and upstreams per path *(done)*
 2. **ALTCHA for writes** -- saves matched by path rules come only from people: proof-of-work,
    client signals, a burst limit and an audit log, plus the Angular library `@iqb/gate-angular`
    *(done)*
@@ -36,8 +36,9 @@ docker run -p 8088:8080 -e IQB_GATE_UPSTREAM=http://frontend:8080 iqb-gate:local
 | `IQB_GATE_PORT` | `8080` | port the gateway listens on |
 | `IQB_GATE_HOST` | `0.0.0.0` | address the gateway listens on |
 | `IQB_GATE_TRUST_PROXY` | `false` | the proxies in front (Traefik) whose `X-Forwarded-*` is believed, as comma-separated addresses or CIDRs, e.g. `172.16.0.0/12`; `true` is refused, as it would believe any client's `X-Forwarded-For` |
-| `IQB_GATE_CONFIG` | -- | path of a YAML file with timeouts and write rules, see `packages/gateway/gate.example.yaml` |
+| `IQB_GATE_CONFIG` | -- | path of a YAML file with upstreams per path, timeouts and write rules, see `packages/gateway/gate.example.yaml` |
 | `IQB_GATE_ENFORCE` | `on` | `off` switches off both gates -- for test runs with Cypress, which they would keep out |
+| `IQB_GATE_RULES_OFF` | -- | names of write rules to switch off, comma-separated, e.g. `workspace`; their writes pass unchecked and no rule further down takes them. A name no rule has stops the gateway at start |
 | `IQB_GATE_SECRET` | -- (required with write rules or the page gate) | at least 32 characters; signs cookies, passes and challenges |
 | `IQB_GATE_AUDIT_KEY` | -- | at least 32 characters; without it there is no audit page |
 | `IQB_GATE_AUDIT_FILE` | `/var/lib/iqb-gate/audit.sqlite` | the audit log (SQLite); the image declares the directory a volume |

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { GatewayConfig } from '../config.js';
+import { hasActiveRules } from './write-gate-config.js';
 import { AuditLog } from '../audit/audit-log.js';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../time.js';
 import { registerAuditRoutes } from '../audit/audit-routes.js';
@@ -13,13 +14,13 @@ import { OidcVerifier } from '@iqb/gate-oidc';
 const CHALLENGES_PER_ADDRESS_AND_MINUTE = 30;
 
 /**
- * Sets up the write gate when it has something to check (enforced, with rules): the challenge
+ * Sets up the write gate when it has something to check (enforced, with a rule on): the challenge
  * routes, the audit log and its page, and the housekeeping that forgets idle
  * sessions, adds folded repeats to their entries and deletes entries past their retention. Returns
  * the check for the proxy, or `undefined` when writes are not checked.
  */
 export function installWriteGate(gateway: FastifyInstance, config: GatewayConfig): GatePreHandler | undefined {
-  if (!config.writeGate.enforce || !config.writeGate.rules.length) return undefined;
+  if (!config.writeGate.enforce || !hasActiveRules(config.writeGate)) return undefined;
 
   const writeGate = new WriteGate(config.secret, config.writeGate.burst);
   const audit = new AuditLog(
@@ -58,6 +59,7 @@ export function installWriteGate(gateway: FastifyInstance, config: GatewayConfig
     onUnavailable: reason => gateway.log.warn(`audit: the OpenID Connect provider cannot be asked: ${reason}`)
   });
 
-  gateway.log.info(`writes are checked: ${config.writeGate.rules.map(rule => rule.name).join(', ')}`);
+  const rules = config.writeGate.rules.map(rule => (rule.off ? `${rule.name} (off)` : rule.name));
+  gateway.log.info(`writes are checked: ${rules.join(', ')}`);
   return writeGatePreHandler(config.writeGate, writeGate, audit, verifier, pending);
 }

@@ -10,6 +10,7 @@ describe('parseConfig', () => {
   it('fills in the defaults around the upstream', () => {
     expect(parseConfig(UPSTREAM)).toEqual({
       upstream: 'http://frontend:8080',
+      upstreams: [],
       host: '0.0.0.0',
       port: 8080,
       trustProxy: false,
@@ -44,6 +45,12 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_SECRET: 'short' }, rules)).toThrow(/at least 32/);
     expect(parseConfig({ ...UPSTREAM, IQB_GATE_SECRET: SECRET }, rules).secret).toBe(SECRET);
     expect(parseConfig({ ...UPSTREAM, IQB_GATE_ENFORCE: 'off' }, rules).writeGate.enforce).toBe(false);
+  });
+
+  it('wants no secret when every rule is switched off', () => {
+    const rules = 'writeGate:\n  rules:\n    - { name: admin, path: ^/api/admin/ }\n';
+    const config = parseConfig({ ...UPSTREAM, IQB_GATE_RULES_OFF: 'admin' }, rules);
+    expect(config.writeGate.rules).toEqual([{ name: 'admin', path: expect.any(RegExp), off: true }]);
   });
 
   it('reads the audit settings', () => {
@@ -90,6 +97,35 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: 'true' })).toThrow(/names the proxies/);
     expect(parseConfig({ ...UPSTREAM, IQB_GATE_TRUST_PROXY: '10.0.0.0/8, 172.16.0.1' }).trustProxy)
       .toEqual(['10.0.0.0/8', '172.16.0.1']);
+  });
+
+  it('gives path prefixes an upstream of their own', () => {
+    const text = 'upstreams:\n  - { prefix: /api/, upstream: "http://backend:3333/" }\n'
+      + '  - { prefix: /files, upstream: "https://files.example.org" }\n';
+    expect(parseConfig(UPSTREAM, text).upstreams).toEqual([
+      { prefix: '/api', upstream: 'http://backend:3333' },
+      { prefix: '/files', upstream: 'https://files.example.org' }
+    ]);
+  });
+
+  it('rejects path upstreams that are no origin, no plain prefix, or named twice', () => {
+    const parseUpstreams = (entries: string) => parseConfig(UPSTREAM, `upstreams:\n${entries}`).upstreams;
+    expect(() => parseUpstreams('  - { prefix: /api }\n')).toThrow(/upstreams\[0\].upstream is required/);
+    expect(() => parseUpstreams('  - { prefix: /api, upstream: backend }\n'))
+      .toThrow(/upstreams\[0\].upstream is no URL/);
+    expect(() => parseUpstreams('  - { prefix: /api, upstream: "ftp://backend" }\n'))
+      .toThrow(/upstreams\[0\].upstream has to be http or https/);
+    expect(() => parseUpstreams('  - { prefix: /api, upstream: "http://backend:3333/api" }\n'))
+      .toThrow(/upstreams\[0\].upstream is an origin/);
+    ['api', '/', '/api/:id', '/.iqb-gate/x'].forEach(prefix => {
+      expect(() => parseUpstreams(`  - { prefix: "${prefix}", upstream: "http://backend:3333" }\n`))
+        .toThrow(/upstreams\[0\].prefix/);
+    });
+    expect(() => parseUpstreams('  - { prefix: /api, upstream: "http://a", url: x }\n'))
+      .toThrow(/upstreams\[0\] has unknown keys: url/);
+    const twice = '  - { prefix: /api, upstream: "http://a" }\n  - { prefix: /api/, upstream: "http://b" }\n';
+    expect(() => parseUpstreams(twice)).toThrow(/upstreams names \/api twice/);
+    expect(() => parseConfig(UPSTREAM, 'upstreams: /api\n')).toThrow(/upstreams has to be a list/);
   });
 
   it('takes the timeouts from the file', () => {

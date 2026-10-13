@@ -25,9 +25,10 @@ export interface CheckedWrite {
 
 /**
  * The rule a request is checked under, or `null` when it is not checked: no write, no rule whose
- * path matches either spelling of the request's path, or an exemption that holds. Leaning to
- * checking -- a path that only looks like a rule's once normalised is still checked, and an
- * exemption has to match both spellings.
+ * path matches either spelling of the request's path, the first matching rule of each spelling
+ * switched off, or an exemption that holds. Leaning to checking -- a path that only looks like a
+ * rule's once normalised is still checked, a rule switched off for one spelling does not let through
+ * what the other spelling's rule checks, and an exemption has to match both spellings.
  */
 export function checkedWrite(
   config: Pick<WriteGateConfig, 'enforce' | 'rules' | 'exempt'>,
@@ -35,7 +36,9 @@ export function checkedWrite(
 ): CheckedWrite | null {
   if (!config.enforce || !SAVING_METHODS.includes(request.method)) return null;
   const paths = pathVariants(request.url);
-  const rule = config.rules.find(({ path }) => path.test(paths.raw) || path.test(paths.normalised));
+  const rule = [paths.normalised, paths.raw]
+    .map(spelling => config.rules.find(({ path }) => path.test(spelling)))
+    .find(found => found && !found.off);
   if (!rule) return null;
   const token = bearerToken(request.authorization);
   if (config.exempt.some(exemption => isExempt(exemption, request.method, paths, token))) return null;

@@ -348,6 +348,80 @@ describe('gateway behind a trusted proxy', () => {
   });
 });
 
+describe('gateway with an upstream of its own for a path prefix', () => {
+  let upstream: Server;
+  let backend: Server;
+  const backendHits: string[] = [];
+  let gateway: FastifyInstance;
+  let base: string;
+
+  beforeAll(async () => {
+    upstream = await startUpstream();
+    backend = await new Promise<Server>(resolve => {
+      const server = createServer(async (request, response) => {
+        backendHits.push(request.url ?? '');
+        if (request.url === '/api/slow') await sleep(1500);
+        response.writeHead(200, { 'content-type': 'application/json', 'x-upstream': 'backend' });
+        response.end(JSON.stringify({ url: request.url, method: request.method }));
+      });
+      server.listen(0, '127.0.0.1', () => resolve(server));
+    });
+    gateway = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
+      upstreams: [{ prefix: '/api', upstream: origin(backend.address() as AddressInfo) }],
+      timeouts: { defaultSeconds: 1, paths: [] },
+      writeGate: {
+        enforce: true,
+        rules: [{ name: 'admin', path: /^\/api\/admin\//i }],
+        exempt: [],
+        burst: { limit: 30, windowSeconds: 60 },
+        userClaim: undefined
+      }
+    }), false);
+    await gateway.listen({ host: '127.0.0.1', port: 0 });
+    base = origin(gateway.server.address() as AddressInfo);
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+    await new Promise(resolve => { upstream.close(resolve); });
+    await new Promise(resolve => { backend.close(resolve); });
+  });
+
+  it('sends the requests below the prefix there, path and query as they were', async () => {
+    const response = await fetch(`${base}/api/units/a%2Fb?sort=name`, { method: 'PATCH', body: 'x' });
+    expect(response.headers.get('x-upstream')).toBe('backend');
+    expect(await response.json()).toEqual({ url: '/api/units/a%2Fb?sort=name', method: 'PATCH' });
+    expect((await fetch(`${base}/api`)).headers.get('x-upstream')).toBe('backend');
+  });
+
+  it('sends everything else to the upstream, a path that only begins like the prefix as well', async () => {
+    const response = await fetch(`${base}/apiary?x=1`);
+    expect(response.headers.get('x-upstream')).toBe('stub');
+    expect((await response.json() as Received).url).toBe('/apiary?x=1');
+  });
+
+  it('checks the writes below the prefix before they reach it', async () => {
+    const hits = backendHits.length;
+    const response = await fetch(`${base}/api/admin/users`, { method: 'POST', body: '{}' });
+    expect(response.status).toBe(403);
+    expect(backendHits.length).toBe(hits);
+  });
+
+  it('gives the prefix the timeouts as well', async () => {
+    expect((await fetch(`${base}/api/slow`)).status).toBe(504);
+  });
+
+  it('keeps passing WebSockets to the upstream', async () => {
+    const socket = new WebSocket(`${base.replace('http', 'ws')}/ws`);
+    const first = await new Promise<string>((resolve, reject) => {
+      socket.on('message', data => resolve(data.toString()));
+      socket.on('error', reject);
+    });
+    socket.close();
+    expect((JSON.parse(first) as { url: string }).url).toBe('/ws');
+  });
+});
+
 describe('gateway without a reachable upstream', () => {
   it('answers 502 and does not tell the client where the upstream is', async () => {
     const unreachable = await new Promise<Server>(resolve => {

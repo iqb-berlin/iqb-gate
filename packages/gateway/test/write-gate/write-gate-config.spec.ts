@@ -35,6 +35,20 @@ describe('parseWriteGate', () => {
     expect(config.userClaim).toBe('username');
   });
 
+  it('switches off the rules IQB_GATE_RULES_OFF names, and only those', () => {
+    const rules = (off?: string) => parseWriteGate(section(STUDIO_LITE), undefined, off).rules
+      .map(rule => [rule.name, rule.off ?? false]);
+    expect(rules()).toEqual([['administration', false], ['workspace', false]]);
+    expect(rules('')).toEqual([['administration', false], ['workspace', false]]);
+    expect(rules(' workspace ,')).toEqual([['administration', false], ['workspace', true]]);
+    expect(rules('workspace,administration')).toEqual([['administration', true], ['workspace', true]]);
+  });
+
+  it('refuses a rule name in IQB_GATE_RULES_OFF that no rule has', () => {
+    expect(() => parseWriteGate(section(STUDIO_LITE), undefined, 'workspaces'))
+      .toThrow(/IQB_GATE_RULES_OFF names workspaces/);
+  });
+
   it('follows IQB_GATE_ENFORCE', () => {
     expect(gate(STUDIO_LITE, 'off').enforce).toBe(false);
     expect(gate(STUDIO_LITE, ' ON ').enforce).toBe(true);

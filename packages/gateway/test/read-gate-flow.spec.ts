@@ -175,14 +175,23 @@ describe('the read gate', () => {
     expect((await fetch(`${base}/api/packages/../workspaces/5`)).status).toBe(403);
   });
 
+  // A gateway of its own: the refusals of the other tests come from the same address and would fold in
   it('folds the same refused read, repeated within a minute, into one entry', async () => {
-    const paths = ['/api/workspaces/7/a', '/api/workspaces/7/b', '/api/workspaces/7/c'];
-    await Promise.all(paths.map(path => fetch(`${base}${path}`, { headers: { authorization: bearer('looper') } })));
-    await vi.waitFor(async () => {
-      const entries = (await auditEntries()).filter(entry => entry.user === 'looper');
-      expect(entries).toHaveLength(1);
-      expect(entries[0].repeated).toBe(2);
-    });
+    const { started, url } = await startGateway();
+    try {
+      const paths = ['/api/workspaces/7/a', '/api/workspaces/7/b', '/api/workspaces/7/c'];
+      await paths.reduce(async (earlier, path) => {
+        await earlier;
+        await fetch(`${url}${path}`, { headers: { authorization: bearer('looper') } });
+      }, Promise.resolve());
+      await vi.waitFor(async () => {
+        const entries = await auditEntries(url);
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toEqual(expect.objectContaining({ user: 'looper', repeated: 2 }));
+      });
+    } finally {
+      await started.close();
+    }
   });
 
   it('asks for the challenge again past the read limit', async () => {

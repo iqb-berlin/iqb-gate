@@ -51,11 +51,14 @@ export class FakeProvider {
     this.keys.push({ kid, privateKey, publicJwk: { ...await exportJWK(publicKey), kid, alg: 'RS256', use: 'sig' } });
   }
 
-  /** A token as the provider issues it: signed with its newest key, valid for five minutes. */
-  async sign(claims: JWTPayload = {}, options: { kid?: string; expiresIn?: string } = {}): Promise<string> {
+  /**
+   * A token as the provider issues it: signed with its newest key, valid for five minutes --
+   * `expiresIn: null` leaves the expiry out.
+   */
+  async sign(claims: JWTPayload = {}, options: { kid?: string; expiresIn?: string | null } = {}): Promise<string> {
     const key = options.kid ? this.keys.find(candidate => candidate.kid === options.kid) : this.keys.at(-1);
     if (!key) throw new Error(`no key ${options.kid}`);
-    return new SignJWT({
+    const token = new SignJWT({
       iss: this.issuer,
       sub: 'f3b1c0de-anna',
       typ: 'Bearer',
@@ -65,9 +68,9 @@ export class FakeProvider {
       ...claims
     })
       .setProtectedHeader({ alg: 'RS256', kid: key.kid })
-      .setIssuedAt()
-      .setExpirationTime(options.expiresIn ?? '5m')
-      .sign(key.privateKey);
+      .setIssuedAt();
+    if (options.expiresIn !== null) token.setExpirationTime(options.expiresIn ?? '5m');
+    return token.sign(key.privateKey);
   }
 }
 

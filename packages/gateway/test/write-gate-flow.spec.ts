@@ -291,18 +291,22 @@ describe('the write gate', () => {
     });
   });
 
-  it('keeps the rejections of different users apart', async () => {
-    const reject = (user: string) => fetch(`${base}/api/admin/groups/1`, {
-      method: 'PUT', headers: { authorization: bearer(user) }, body: '{}'
-    });
-    await reject('bert');
-    await reject('carla');
-    await vi.waitFor(async () => {
-      const users = (await auditEntries())
-        .filter(entry => entry.path === '/api/admin/groups/1')
-        .map(entry => entry.user);
-      expect(users.sort()).toEqual(['bert', 'carla']);
-    });
+  // A script can put a new name into an unsigned token for every request
+  it('folds the rejections of names nobody verified, coming from one address', async () => {
+    const { started, url } = await startGateway();
+    try {
+      const reject = (user: string) => fetch(`${url}/api/admin/groups/1`, {
+        method: 'PUT', headers: { authorization: bearer(user) }, body: '{}'
+      });
+      await reject('bert');
+      await reject('carla');
+      await vi.waitFor(async () => {
+        const entries = (await auditEntries(url)).filter(entry => entry.path === '/api/admin/groups/1');
+        expect(entries).toEqual([expect.objectContaining({ user: 'bert', repeated: 1 })]);
+      });
+    } finally {
+      await started.close();
+    }
   });
 
   it('logs a write whose client left before the answer as 499', async () => {

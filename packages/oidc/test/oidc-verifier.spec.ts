@@ -64,6 +64,19 @@ describe('OidcVerifier', () => {
     expect(onRejected).toHaveBeenCalledWith(expect.stringContaining('no access token'), expect.anything());
   });
 
+  // A provider other than Keycloak writes no typ: its ID token names the client in aud as well
+  it('refuses an ID token of a provider that does not say what its tokens are', async () => {
+    const idToken = await provider.sign({ typ: undefined, azp: undefined, aud: 'studio', at_hash: 'x1' });
+    expect(await verifier().verify(idToken)).toBeNull();
+    expect(await verifier().verify(await provider.sign({ typ: undefined, c_hash: 'x2' }))).toBeNull();
+    expect(onRejected).toHaveBeenCalledWith(expect.stringContaining('an ID token'), expect.anything());
+  });
+
+  it('refuses a token without an expiry, which would never expire', async () => {
+    expect(await verifier().verify(await provider.sign({}, { expiresIn: null }))).toBeNull();
+    expect(onRejected).toHaveBeenCalledWith(expect.stringContaining('exp'), expect.anything());
+  });
+
   it('refuses a token for another client, and takes it when the client is named in aud', async () => {
     expect(await verifier().verify(await provider.sign({ azp: 'coding-box' }))).toBeNull();
     const namedInAudience = await provider.sign({ azp: 'coding-box', aud: ['account', 'studio'] });

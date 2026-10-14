@@ -56,6 +56,21 @@ describe('provideIqbOidc', () => {
     history.replaceState(null, '', before);
   });
 
+  // The person went back from the provider without logging in; a later login lands where it is meant to
+  it('should forget the page of a forced login that was abandoned', async () => {
+    const before = document.location.href;
+    sessionStorage.setItem('iqb-oidc-return-to', `${document.location.origin}/#/workspace/3`);
+    await startWith(jest.fn(() => of({ isAuthenticated: false })));
+    expect(document.location.href).toBe(before);
+    expect(sessionStorage.getItem('iqb-oidc-return-to')).toBeNull();
+  });
+
+  it('should forget it as well when the provider fails', async () => {
+    sessionStorage.setItem('iqb-oidc-return-to', `${document.location.origin}/#/workspace/3`);
+    await startWith(jest.fn(() => throwError(() => new Error('unreachable'))));
+    expect(sessionStorage.getItem('iqb-oidc-return-to')).toBeNull();
+  });
+
   it('should let the application start when the provider fails', async () => {
     await expect(startWith(jest.fn(() => throwError(() => new Error('unreachable'))))).resolves.toBeUndefined();
   });

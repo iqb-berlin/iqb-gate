@@ -99,9 +99,11 @@ against it.
 **Audit log:** every checked write is recorded once its answer is final -- time, session, the writer
 named by `writeGate.userClaim` from the Bearer JWT (unverified: trustworthy only with a 2xx status,
 when the application accepted the token), method, path without the query, rule, status (499 when
-the client left), outcome and observations. Identical rejections within a minute -- same session,
-writer, rule, outcome and observations, whatever the path -- are folded into one entry with their
-count, also those of a client that keeps no cookie, so a script in a loop cannot flood the log.
+the client left), outcome and observations. Identical rejections within a minute -- same client
+address, rule, outcome and observations, and the same person where the gateway verified one -- are
+folded into one entry with their count, whatever the path, session or unverified name. A script in a
+loop that fetches a fresh cookie or makes up a name for every request cannot flood the log; people
+behind one school address who are refused alike in the same minute share an entry.
 Refused reads go into the same log (see below). Read it at `/.iqb-gate/admin/` (the audit key as
 password, any user name) or as JSON at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as
 Bearer token). The SQLite table is `audit`; a log file from before reads were checked has its
@@ -140,8 +142,11 @@ const identity = await verifier.verify(token); // OidcIdentity, or null for any 
 
 It finds the provider's keys through its discovery document (or `jwksUri`), keeps them and fetches
 them again for an unknown key id; it accepts asymmetric signatures only (no `none`, no shared
-secrets) and checks the issuer, the expiry, and -- when given -- that the client is named in `aud` or
-as `azp`, and the `audience`. `identity` holds issuer, subject, a username (`preferred_username`, else
+secrets) and checks the issuer, the expiry (a token without one is refused), that it is an access
+token -- Keycloak's `typ`, the header type, and no claim only ID tokens carry (`at_hash`, `c_hash`) --
+and, when given, that the client is named in `aud` or as `azp`, and the `audience`. With a provider
+other than Keycloak, configure `audience` (the API's own): its ID tokens name the client in `aud` as
+well, so `clientId` alone cannot tell them from access tokens. `identity` holds issuer, subject, a username (`preferred_username`, else
 e-mail, else subject), e-mail, names and roles (Keycloak's realm and client roles). It never throws
 for a bad token; `onRejected` hears why.
 

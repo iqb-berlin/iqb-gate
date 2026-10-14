@@ -6,9 +6,16 @@ import { identityOf, type OidcIdentity } from './identity.js';
 export interface OidcVerifierOptions {
   /** The provider's issuer, as in its tokens, e.g. `https://login.example.org/realms/iqb`. */
   issuer: string;
-  /** The client the tokens have to be for: named in `aud` or as `azp`. Also selects the client's roles. */
+  /**
+   * The client the tokens have to be for: named in `aud` or as `azp`. Also selects the client's
+   * roles. An ID token names the client in `aud` as well: with a provider that does not say in the
+   * token what it is (Keycloak does, in `typ`), configure {@link audience} too.
+   */
   clientId?: string;
-  /** An audience the tokens have to name in `aud`, checked strictly. */
+  /**
+   * An audience the tokens have to name in `aud`, checked strictly -- the API's own audience, which
+   * an ID token never names.
+   */
   audience?: string | string[];
   /** Where the provider's keys are; found through its discovery document when not given. */
   jwksUri?: string;
@@ -32,6 +39,9 @@ const ALGORITHMS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256
 
 /** What an access token may say it is, in its header; an ID token says nothing, or `JWT`. */
 const ACCESS_TOKEN_HEADER_TYPES = ['jwt', 'at+jwt', 'application/at+jwt'];
+
+/** Claims only an ID token carries (OpenID Connect Core): the hashes of the codes issued with it. */
+const ID_TOKEN_CLAIMS = ['at_hash', 'c_hash'];
 
 const DISCOVERY_TIMEOUT_MS = 5000;
 
@@ -72,6 +82,8 @@ export class OidcVerifier {
       const { payload } = await jwtVerify(token, await this.keys(), {
         audience: this.options.audience,
         algorithms: ALGORITHMS,
+        // jose checks the expiry only where there is one: a token without it would never expire
+        requiredClaims: ['exp'],
         clockTolerance: this.options.clockToleranceSeconds ?? 30
       });
       this.checkClaims(payload);
@@ -110,6 +122,9 @@ export class OidcVerifier {
     if (payload.typ !== undefined && String(payload.typ).toLowerCase() !== 'bearer') {
       throw new TokenRejected(`the token is a ${String(payload.typ)} token, no access token`);
     }
+    // Other providers do not say it, but an ID token gives itself away by these
+    const idTokenClaim = ID_TOKEN_CLAIMS.find(claim => claim in payload);
+    if (idTokenClaim) throw new TokenRejected(`the token carries ${idTokenClaim}: an ID token, no access token`);
     this.checkClient(payload);
   }
 

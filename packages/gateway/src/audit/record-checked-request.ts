@@ -50,7 +50,7 @@ export function recordWhenAnswered(
       outcome: checked.assessment.outcome,
       blockingSignals: checked.assessment.blockingSignals,
       loggedSignals: checked.assessment.loggedSignals
-    }, now), error => request.log.error({ err: error }, 'naming the person for the audit log failed'));
+    }, now, request.ip), error => request.log.error({ err: error }, 'naming the person for the audit log failed'));
     context.pending.add(entry);
     entry.finally(() => context.pending.delete(entry));
   };

@@ -197,12 +197,26 @@ describe('AuditLog', () => {
       expect(log.find()).toEqual([expect.objectContaining({ sessionId: null, repeated: 1 })]);
     });
 
+    // A script can fetch a fresh cookie and make up a name for every request
+    it('folds what a client chooses freely: a new session or an unverified name each time', () => {
+      ['s1', 's2', 's3'].forEach((sessionId, index) => log.record(
+        rejected({ sessionId, user: `made-up-${index}` }),
+        1000 + index,
+        '10.0.0.1'
+      ));
+      expect(log.find()).toEqual([expect.objectContaining({ sessionId: 's1', user: 'made-up-0', repeated: 2 })]);
+    });
+
     it('writes rejections of another kind on their own', () => {
-      log.record(rejected(), 1000);
-      log.record(rejected({ sessionId: 's2' }), 1000);
-      log.record(rejected({ user: 'bert' }), 1000);
-      log.record(rejected({ rule: 'workspace' }), 1000);
-      log.record(rejected({ outcome: 'verification-required', statusCode: 428, blockingSignals: [] }), 1000);
+      log.record(rejected(), 1000, '10.0.0.1');
+      log.record(rejected(), 1000, '10.0.0.2');
+      log.record(rejected({ user: 'bert', userVerified: true }), 1000, '10.0.0.1');
+      log.record(rejected({ rule: 'workspace' }), 1000, '10.0.0.1');
+      log.record(
+        rejected({ outcome: 'verification-required', statusCode: 428, blockingSignals: [] }),
+        1000,
+        '10.0.0.1'
+      );
       expect(log.find()).toHaveLength(5);
     });
 

@@ -20,6 +20,14 @@ describe('timeoutSecondsFor', () => {
     expect(timeoutSecondsFor('/api/units', TIMEOUTS)).toBe(120);
   });
 
+  // The application reads /API/admin/workspace as /api/admin/workspace: a long export there needs its time
+  it('covers a path spelled in other case, or with dot segments, slashes and escapes', () => {
+    expect(timeoutSecondsFor('/API/Admin/Workspace/5/export', TIMEOUTS)).toBe(1800);
+    expect(timeoutSecondsFor('//api/admin/workspace/5', TIMEOUTS)).toBe(1800);
+    expect(timeoutSecondsFor('/api/x/../admin/workspace/5', TIMEOUTS)).toBe(1800);
+    expect(timeoutSecondsFor('/api/%61dmin/workspace/5', TIMEOUTS)).toBe(1800);
+  });
+
   it('does not cover a path that only begins with the same letters', () => {
     expect(timeoutSecondsFor('/apis', TIMEOUTS)).toBe(60);
     expect(timeoutSecondsFor('/api/admin/workspaces', TIMEOUTS)).toBe(120);

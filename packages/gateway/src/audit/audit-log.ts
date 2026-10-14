@@ -31,7 +31,7 @@ export interface AuditRecord {
 export interface AuditEntry extends AuditRecord {
   id: number;
   createdAt: string;
-  /** Identical rejections of the same session within a minute, folded into this entry. */
+  /** Identical rejections from the same client address within a minute, folded into this entry. */
   repeated: number;
 }
 
@@ -190,8 +190,12 @@ export class AuditLog {
     }
   }
 
-  record(entry: AuditRecord, now = Date.now()): void {
-    const kind = entry.outcome === 'allowed' ? null : AuditLog.kindOf(entry);
+  /**
+   * Writes one checked request. `clientAddress` -- where it came from, as the gateway sees it --
+   * only decides which rejections fold together; it is not stored.
+   */
+  record(entry: AuditRecord, now = Date.now(), clientAddress: string | null = null): void {
+    const kind = entry.outcome === 'allowed' ? null : AuditLog.kindOf(entry, clientAddress);
     if (kind && this.rejections.isRepeat(kind, now)) return;
     try {
       const result = this.insert.run(
@@ -205,14 +209,16 @@ export class AuditLog {
   }
 
   /**
-   * What makes two rejections the same: who (session and user), under which rule, how decided and
-   * answered, and what was observed. Not the path: a script that varies it would otherwise write a
-   * row per request. The entry keeps the path of the first rejection.
+   * What makes two rejections the same: where they came from (the client address) and a person
+   * the gateway verified, under which rule, how decided and answered, and what was observed. Nothing
+   * the client chooses freely: not the session -- a script can fetch a fresh cookie for every
+   * request -- nor an unverified name, nor the path. Either would let a script in a loop write a
+   * row per request. The entry keeps the session, name and path of the first rejection.
    */
-  private static kindOf(entry: AuditRecord): string {
+  private static kindOf(entry: AuditRecord, clientAddress: string | null): string {
     return JSON.stringify([
-      entry.sessionId, entry.user, entry.userVerified, entry.method, entry.rule, entry.outcome, entry.statusCode,
-      entry.blockingSignals, entry.loggedSignals
+      clientAddress, entry.userVerified ? entry.user : null, entry.method, entry.rule, entry.outcome,
+      entry.statusCode, entry.blockingSignals, entry.loggedSignals
     ]);
   }
 

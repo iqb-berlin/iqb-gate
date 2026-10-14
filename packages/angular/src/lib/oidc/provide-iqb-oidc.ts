@@ -25,13 +25,13 @@ async function checkAuthAtStart(): Promise<void> {
   const oidc = inject(OidcSecurityService);
   const loginGuard = inject(IqbOidcLoginGuard);
   const document = inject(DOCUMENT);
-  try {
-    const result = await firstValueFrom(oidc.checkAuth().pipe(timeout(CHECK_AUTH_TIMEOUT_MS)));
-    const returnTo = result?.isAuthenticated ? loginGuard.takeReturnTo() : null;
-    // Before the router's first navigation, which then starts at the page the person was on
-    if (returnTo && returnTo !== document.location.href) document.defaultView?.history.replaceState(null, '', returnTo);
-  } catch {
-    // Logged out
+  const authenticated = await firstValueFrom(oidc.checkAuth().pipe(timeout(CHECK_AUTH_TIMEOUT_MS)))
+    .then(result => !!result?.isAuthenticated, () => false);
+  // Taken whatever came of it: a forced login the person abandoned must not send a later one there
+  const returnTo = loginGuard.takeReturnTo();
+  // Before the router's first navigation, which then starts at the page the person was on
+  if (authenticated && returnTo && returnTo !== document.location.href) {
+    document.defaultView?.history.replaceState(null, '', returnTo);
   }
 }
 

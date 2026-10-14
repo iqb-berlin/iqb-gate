@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { OidcVerifier } from '@iqb/gate-oidc';
 import type { GatewayConfig } from './config.js';
-import { hasActiveRules } from './path-rules.js';
+import { checksAnything } from './path-rules.js';
 import { AuditLog } from './audit/audit-log.js';
 import { registerAuditRoutes } from './audit/audit-routes.js';
 import type { PendingEntries } from './audit/record-checked-request.js';
@@ -27,8 +27,8 @@ function windowOf({ limit, windowSeconds }: { limit: number; windowSeconds: numb
  * checks anything.
  */
 export function installGates(gateway: FastifyInstance, config: GatewayConfig): GatePreHandler[] {
-  const checksWrites = config.writeGate.enforce && hasActiveRules(config.writeGate.rules);
-  const checksReads = config.readGate.enforce && hasActiveRules(config.readGate.rules);
+  const checksWrites = checksAnything(config.writeGate);
+  const checksReads = checksAnything(config.readGate);
   if (!checksWrites && !checksReads) return [];
 
   // One state for both gates: a challenge solved for a write counts for reads, and the other way round
@@ -79,6 +79,11 @@ export function installGates(gateway: FastifyInstance, config: GatewayConfig): G
     audit.addRepeats();
     audit.close();
   });
+
+  if (config.trustProxy === false) {
+    gateway.log.warn('no proxy is trusted (IQB_GATE_TRUST_PROXY): behind one, every client has its address -- '
+      + 'refusals fold into one audit entry and all clients share one challenge limit');
+  }
 
   const ruleNames = (rules: GatewayConfig['writeGate']['rules']) => rules
     .map(rule => (rule.off ? `${rule.name} (off)` : rule.name))

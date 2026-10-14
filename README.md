@@ -103,7 +103,10 @@ the client left), outcome and observations. Identical rejections within a minute
 address, rule, outcome and observations, and the same person where the gateway verified one -- are
 folded into one entry with their count, whatever the path, session or unverified name. A script in a
 loop that fetches a fresh cookie or makes up a name for every request cannot flood the log; people
-behind one school address who are refused alike in the same minute share an entry.
+behind one school address who are refused alike in the same minute share an entry, which keeps the
+session, name and path of the first of them -- a lookup by session finds only that one. Behind a
+proxy, the address is the client's only with `IQB_GATE_TRUST_PROXY` (the gateway warns at start
+without it); otherwise every refusal of a kind folds into one entry.
 Refused reads go into the same log (see below). Read it at `/.iqb-gate/admin/` (the audit key as
 password, any user name) or as JSON at `/.iqb-gate/admin/audit?from=&to=&session=&limit=` (the key as
 Bearer token). The SQLite table is `audit`; a log file from before reads were checked has its
@@ -143,10 +146,11 @@ const identity = await verifier.verify(token); // OidcIdentity, or null for any 
 It finds the provider's keys through its discovery document (or `jwksUri`), keeps them and fetches
 them again for an unknown key id; it accepts asymmetric signatures only (no `none`, no shared
 secrets) and checks the issuer, the expiry (a token without one is refused), that it is an access
-token -- Keycloak's `typ`, the header type, and no claim only ID tokens carry (`at_hash`, `c_hash`) --
-and, when given, that the client is named in `aud` or as `azp`, and the `audience`. With a provider
-other than Keycloak, configure `audience` (the API's own): its ID tokens name the client in `aud` as
-well, so `clientId` alone cannot tell them from access tokens. `identity` holds issuer, subject, a username (`preferred_username`, else
+token -- Keycloak's `typ`, the header type, and no claim only ID tokens carry (`at_hash`, `c_hash`,
+`s_hash`) -- and, when given, that the client is named in `aud` or as `azp`, and the `audience`.
+With a provider other than Keycloak, configure `audience` (the API's own): its ID tokens name the
+client in `aud` as well, and the hashes are optional in the code flow, so `clientId` alone cannot
+always tell an ID token from an access token. `identity` holds issuer, subject, a username (`preferred_username`, else
 e-mail, else subject), e-mail, names and roles (Keycloak's realm and client roles). It never throws
 for a bad token; `onRejected` hears why.
 
@@ -211,6 +215,10 @@ waits about a second, once a week; a scraper that opens pages by the thousand pa
   They are signed for the page gate alone: a solution counts neither twice nor for the write gate.
 - **Monitoring** that fetches pages with `Accept: text/html` needs an `allow` rule, or uses
   `/.iqb-gate/health`.
+- **Texts:** the interstitial and the denied page speak German by default. `pageGate.texts`
+  replaces any of them (`lang`, `title`, `intro`, `continue`, `noscript`, `cookiesBlocked`, `loading`,
+  `verified`, `failed`, `deniedTitle`, `denied`); a name it does not know stops the gateway at start.
+  Set `lang` with texts in another language, so that screen readers read them right.
 
 **Keep the application unreachable around the gateway:** publish no ports of the application's
 containers, and route every path of the host through the gateway.
@@ -286,3 +294,6 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+How code is written here -- and how the rules of studio-lite are adapted to a gateway and its
+libraries -- is in [rules.md](rules.md).

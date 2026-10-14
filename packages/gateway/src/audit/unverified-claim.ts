@@ -1,9 +1,12 @@
+import { bearerToken } from '@iqb/gate-oidc';
+
 /** Longer claims are cut: the audit log names a person, it does not store what a client sends. */
 const MAX_CLAIM_LENGTH = 200;
 
-/** The JWT of an `Authorization: Bearer` header; `null` for any other header, or none. */
+/** The Bearer token of a header when it has the form of a JWT; `null` for any other token, or none. */
 export function bearerJwt(authorization: string | undefined): string | null {
-  return /^Bearer\s+([\w-]+\.[\w-]+\.[\w-]*)$/i.exec(authorization ?? '')?.[1] ?? null;
+  const token = bearerToken(authorization);
+  return token && /^[\w-]+\.[\w-]+\.[\w-]*$/.test(token) ? token : null;
 }
 
 /** A claim of a token's payload as text, cut to a length fit for the audit log. */

@@ -10,6 +10,7 @@ import type { GatewayConfig } from '../src/config.js';
 import { compilePattern } from '../src/config-helpers.js';
 import { deriveSecret } from '../src/proof-of-work.js';
 import { issuePass } from '../src/page-gate/page-pass.js';
+import { DEFAULT_PAGE_TEXTS } from '../src/page-gate/page-texts.js';
 import { testConfig } from './support/test-config.js';
 import { solvedPayload } from './support/solve-challenge.js';
 
@@ -53,6 +54,7 @@ describe('the page gate', () => {
         enabled: true,
         passDays: 7,
         challengesPerAddressAndMinute: 120,
+        texts: DEFAULT_PAGE_TEXTS,
         policy: [
           { name: 'ai-crawlers', userAgent: compilePattern('GPTBot|CCBot', 'test'), action: 'deny' },
           {
@@ -111,6 +113,29 @@ describe('the page gate', () => {
     expect(page).toContain('<altcha-widget id="iqb-gate-widget" challenge="/.iqb-gate/page-challenge" auto="off"');
     expect(page).toContain(`configuration='{"hideLogo":true,"hideFooter":true}'`);
     expect(upstreamHits.length).toBe(hits);
+  });
+
+  // Its script is cached for good, so the texts of the status line come with the page, as data
+  it('says what the installation gave it to say, on the page and in the status line', async () => {
+    const texts = {
+      ...DEFAULT_PAGE_TEXTS,
+      lang: 'en',
+      title: 'One moment <please>',
+      failed: 'That did not work. </script>',
+      denied: 'No.'
+    };
+    const { started } = await startGateway({ texts });
+    try {
+      const page = (await open('/', opening(), started)).text;
+      expect(page).toContain('<html lang="en">');
+      expect(page).toContain('<h1>One moment &lt;please&gt;</h1>');
+      const [, data] = /<script id="iqb-gate-texts" type="application\/json">(.*?)<\/script>/.exec(page) ?? [];
+      expect(JSON.parse(data)).toEqual(expect.objectContaining({ failed: 'That did not work. </script>' }));
+      const denied = await open('/', opening({ 'user-agent': 'GPTBot/1.2' }), started);
+      expect(denied.text).toContain('<p>No.</p>');
+    } finally {
+      await started.close();
+    }
   });
 
   it('takes an Accept for HTML as a navigation when the browser says nothing else', async () => {

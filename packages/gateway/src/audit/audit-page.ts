@@ -1,3 +1,38 @@
+import { escapeHtml, jsonForScriptBlock } from '../html.js';
+
+/** What the audit page says -- for the administrators of an installation, in German. */
+const TEXTS = {
+  title: 'iqb-gate · Zugriffe',
+  heading: 'Zugriffe',
+  hint: 'Alle geprüften Schreibzugriffe und die abgelehnten Lesezugriffe (GET), die neuesten zuerst. '
+    + 'Ein Nutzer mit ✓ stammt aus einem Token, das das Gateway beim Anmeldedienst geprüft hat. Ohne ✓ stammt '
+    + 'er ungeprüft aus dem Token der Anfrage; verlässlich ist er dann nur bei einem Status 2xx – dann hat die '
+    + 'Anwendung das Token angenommen. Gleiche Ablehnungen von derselben Adresse innerhalb einer Minute stehen in '
+    + 'einem Eintrag mit ihrer Anzahl; er zeigt Sitzung, Nutzer und Pfad der ersten, und nur nach dieser '
+    + 'Sitzung lässt er sich suchen.',
+  from: 'Von',
+  to: 'Bis',
+  session: 'Sitzung',
+  limit: 'Anzahl',
+  show: 'Anzeigen',
+  columns: ['Zeit', 'Nutzer', 'Methode', 'Pfad', 'Regel', 'Status', 'Ergebnis', 'Signale', 'Sitzung'],
+  /** Read by the page's script. */
+  script: {
+    outcomes: {
+      'allowed': 'durchgelassen',
+      'automation-detected': 'Automatisierung erkannt',
+      'verification-required': 'Bestätigung verlangt'
+    },
+    userVerified: 'beim Anmeldedienst geprüft',
+    userUnverified: 'ungeprüft',
+    noSession: 'keine',
+    noSessionHint: 'Die Anfrage brachte keine Sitzung mit.',
+    loading: 'Lade …',
+    entries: 'Einträge',
+    loadFailed: 'Das Protokoll konnte nicht geladen werden'
+  }
+};
+
 /**
  * The audit page at `/.iqb-gate/admin/`: a table of the checked writes and refused reads, read from
  * `/.iqb-gate/admin/audit` with the credentials the browser asked for. Everything that comes from
@@ -19,7 +54,7 @@ export const AUDIT_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>iqb-gate · Zugriffe</title>
+<title>${escapeHtml(TEXTS.title)}</title>
 <style>
   :root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 14px; }
   body { margin: 16px; }
@@ -40,34 +75,26 @@ export const AUDIT_PAGE = `<!doctype html>
 </style>
 </head>
 <body>
-<h1>Zugriffe</h1>
-<p class="hint">Alle geprüften Schreibzugriffe und die abgelehnten Lesezugriffe (GET), die neuesten zuerst.
-Ein Nutzer mit &#10003; stammt aus einem Token,
-das das Gateway beim Anmeldedienst geprüft hat. Ohne &#10003; stammt er ungeprüft aus dem Token der Anfrage;
-verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung das Token angenommen.</p>
+<h1>${escapeHtml(TEXTS.heading)}</h1>
+<p class="hint">${escapeHtml(TEXTS.hint)}</p>
 <form id="filter">
-  <label>Von <input type="date" name="from"></label>
-  <label>Bis <input type="date" name="to"></label>
-  <label>Sitzung <input type="text" name="session" size="26"></label>
-  <label>Anzahl <input type="number" name="limit" value="200" min="1" max="1000"></label>
-  <button type="submit">Anzeigen</button>
+  <label>${escapeHtml(TEXTS.from)} <input type="date" name="from"></label>
+  <label>${escapeHtml(TEXTS.to)} <input type="date" name="to"></label>
+  <label>${escapeHtml(TEXTS.session)} <input type="text" name="session" size="26"></label>
+  <label>${escapeHtml(TEXTS.limit)} <input type="number" name="limit" value="200" min="1" max="1000"></label>
+  <button type="submit">${escapeHtml(TEXTS.show)}</button>
 </form>
 <p class="status" id="status"></p>
 <div class="table-wrap">
 <table>
   <thead><tr>
-    <th>Zeit</th><th>Nutzer</th><th>Methode</th><th>Pfad</th><th>Regel</th><th>Status</th>
-    <th>Ergebnis</th><th>Signale</th><th>Sitzung</th>
+    ${TEXTS.columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}
   </tr></thead>
   <tbody id="entries"></tbody>
 </table>
 </div>
 <script>
-  const OUTCOMES = {
-    'allowed': 'durchgelassen',
-    'automation-detected': 'Automatisierung erkannt',
-    'verification-required': 'Bestätigung verlangt'
-  };
+  const TEXTS = ${jsonForScriptBlock(TEXTS.script)};
   const form = document.getElementById('filter');
   const status = document.getElementById('status');
   const body = document.getElementById('entries');
@@ -81,7 +108,7 @@ verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung
 
   function userCell(entry) {
     const td = cell(entry.user ? entry.user + (entry.userVerified ? ' \u2713' : '') : '–');
-    if (entry.user) td.title = entry.userVerified ? 'beim Anmeldedienst geprüft' : 'ungeprüft';
+    if (entry.user) td.title = entry.userVerified ? TEXTS.userVerified : TEXTS.userUnverified;
     return td;
   }
 
@@ -99,7 +126,8 @@ verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung
 
   function row(entry) {
     const tr = document.createElement('tr');
-    const outcome = (OUTCOMES[entry.outcome] || entry.outcome) + (entry.repeated ? ' (+' + entry.repeated + ')' : '');
+    const repeats = entry.repeated ? ' (+' + entry.repeated + ')' : '';
+    const outcome = (TEXTS.outcomes[entry.outcome] || entry.outcome) + repeats;
     tr.append(
       cell(new Date(entry.createdAt).toLocaleString('de-DE')),
       userCell(entry),
@@ -109,9 +137,9 @@ verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung
       cell(String(entry.statusCode)),
       cell(outcome, 'outcome-' + entry.outcome),
       signalsCell(entry),
-      cell(entry.sessionId ? entry.sessionId.slice(0, 8) : 'keine', 'session')
+      cell(entry.sessionId ? entry.sessionId.slice(0, 8) : TEXTS.noSession, 'session')
     );
-    tr.lastChild.title = entry.sessionId || 'Die Anfrage brachte keine Sitzung mit.';
+    tr.lastChild.title = entry.sessionId || TEXTS.noSessionHint;
     return tr;
   }
 
@@ -127,15 +155,15 @@ verlässlich ist er dann nur bei einem Status 2xx &ndash; dann hat die Anwendung
       if (!value) return;
       query.set(name, name === 'from' || name === 'to' ? localBound(value, name === 'to') : value);
     });
-    status.textContent = 'Lade …';
+    status.textContent = TEXTS.loading;
     try {
       const response = await fetch('audit?' + query, { credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error('Status ' + response.status);
       const entries = await response.json();
       body.replaceChildren(...entries.map(row));
-      status.textContent = entries.length + ' Einträge';
+      status.textContent = entries.length + ' ' + TEXTS.entries;
     } catch (error) {
-      status.textContent = 'Das Protokoll konnte nicht geladen werden (' + error.message + ').';
+      status.textContent = TEXTS.loadFailed + ' (' + error.message + ').';
     }
   }
 

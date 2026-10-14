@@ -1,15 +1,10 @@
 import {
   type CanActivate, type ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException
 } from '@nestjs/common';
-import type { OidcVerifier } from '@iqb/gate-oidc';
+import { bearerToken, type OidcVerifier } from '@iqb/gate-oidc';
 import {
   OIDC_USER_SYNC, OIDC_VERIFIER, type OidcRequest, type OidcUserSync
 } from './tokens.js';
-
-function bearerToken(header: string | string[] | undefined): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  return /^Bearer\s+(\S+)$/i.exec(value ?? '')?.[1] ?? null;
-}
 
 /** The HTTP request of a context; anything else -- GraphQL, WebSockets -- is refused, not guessed at. */
 export function httpRequestOf(context: ExecutionContext): OidcRequest {

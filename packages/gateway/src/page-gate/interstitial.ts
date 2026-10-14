@@ -1,4 +1,6 @@
 import { GATE_PREFIX } from '@iqb/gate-protocol';
+import { escapeHtml, jsonForScriptBlock } from '../html.js';
+import type { PageTexts } from './page-texts.js';
 
 export const PAGE_CHALLENGE_PATH = `${GATE_PREFIX}/page-challenge`;
 export const PASS_PATH = `${GATE_PREFIX}/pass`;
@@ -32,34 +34,41 @@ const PAGE_STYLE = `
   p { margin: 0; line-height: 1.5; }
 `;
 
+/** The id of the data block with the status line's texts, which the page and its script share. */
+const TEXTS_ID = 'iqb-gate-texts';
+
 /**
  * The page a browser gets instead of the one it asked for, until it holds a pass: the ALTCHA
  * widget solves a challenge by itself, the page hands the solution in and reloads -- the same URL,
  * with its query and its hash, so that the application starts as it would have. The scripts carry
- * their version in the URL, so that they can be cached for good.
+ * their version in the URL, so that they can be cached for good; the texts of the status line
+ * therefore travel with the page, as data its script reads (no script runs from the page itself).
  */
-export function interstitialPage(widgetVersion: string, scriptVersion: string): string {
+export function interstitialPage(widgetVersion: string, scriptVersion: string, texts: PageTexts): string {
+  const statusTexts = {
+    cookiesBlocked: texts.cookiesBlocked, loading: texts.loading, verified: texts.verified, failed: texts.failed
+  };
   return `<!doctype html>
-<html lang="de">
+<html lang="${escapeHtml(texts.lang)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Einen Moment bitte …</title>
+<title>${escapeHtml(texts.title)}</title>
 <style>${PAGE_STYLE}</style>
+<script id="${TEXTS_ID}" type="application/json">${jsonForScriptBlock(statusTexts)}</script>
 <script src="${WIDGET_SCRIPT_PATH}?v=${widgetVersion}" defer></script>
 <script src="${PAGE_GATE_SCRIPT_PATH}?v=${scriptVersion}" defer></script>
 </head>
 <body>
 <main>
-  <h1>Einen Moment bitte …</h1>
-  <p>Ihr Browser bestätigt einmal, dass hier kein automatisiertes Programm Seiten abruft. Das dauert meist
-  eine Sekunde; danach geht es von selbst weiter.</p>
+  <h1>${escapeHtml(texts.title)}</h1>
+  <p>${escapeHtml(texts.intro)}</p>
   <altcha-widget id="iqb-gate-widget" challenge="${PAGE_CHALLENGE_PATH}" auto="off"
                  configuration='${WIDGET_CONFIGURATION}'></altcha-widget>
   <p id="iqb-gate-status" role="status"></p>
-  <button id="iqb-gate-continue" type="button" hidden>Weiter</button>
-  <noscript><p>Bitte schalten Sie JavaScript ein, um fortzufahren.</p></noscript>
+  <button id="iqb-gate-continue" type="button" hidden>${escapeHtml(texts.continue)}</button>
+  <noscript><p>${escapeHtml(texts.noscript)}</p></noscript>
 </main>
 </body>
 </html>
@@ -74,6 +83,7 @@ export function interstitialPage(widgetVersion: string, scriptVersion: string): 
  */
 export const PAGE_GATE_SCRIPT = `(() => {
   const KEY = 'iqb-gate-reloaded-at';
+  const texts = JSON.parse(document.getElementById('${TEXTS_ID}').textContent);
   const widget = document.getElementById('iqb-gate-widget');
   const status = document.getElementById('iqb-gate-status');
   const proceed = document.getElementById('iqb-gate-continue');
@@ -95,12 +105,11 @@ export const PAGE_GATE_SCRIPT = `(() => {
   const last = remembered();
   if (last !== null && Date.now() - last < 60000) {
     try { sessionStorage.removeItem(KEY); } catch (error) { /* nothing to forget */ }
-    status.textContent = 'Ihr Browser hat die Bestätigung nicht behalten. Sind Cookies für diese Seite gesperrt? '
-      + 'Bitte erlauben Sie sie und laden Sie die Seite neu.';
+    status.textContent = texts.cookiesBlocked;
     return;
   }
   widget.addEventListener('verified', async event => {
-    status.textContent = 'Bestätigt, die Seite wird geladen …';
+    status.textContent = texts.loading;
     try {
       const response = await fetch('${PASS_PATH}', {
         method: 'POST',
@@ -112,12 +121,12 @@ export const PAGE_GATE_SCRIPT = `(() => {
       if (remember()) {
         location.reload();
       } else {
-        status.textContent = 'Bestätigt.';
+        status.textContent = texts.verified;
         proceed.hidden = false;
         proceed.addEventListener('click', () => location.reload());
       }
     } catch (error) {
-      status.textContent = 'Das hat nicht geklappt. Bitte laden Sie die Seite neu.';
+      status.textContent = texts.failed;
     }
   });
   customElements.whenDefined('altcha-widget').then(() => widget.verify());
@@ -125,9 +134,11 @@ export const PAGE_GATE_SCRIPT = `(() => {
 `;
 
 /** The page a client gets that the policy keeps out. */
-export const DENIED_PAGE = `<!doctype html>
-<html lang="de">
-<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Kein Zugriff</title></head>
-<body><p>Dieser Zugriff ist nicht erlaubt.</p></body>
+export function deniedPage(texts: PageTexts): string {
+  return `<!doctype html>
+<html lang="${escapeHtml(texts.lang)}">
+<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>${escapeHtml(texts.deniedTitle)}</title></head>
+<body><p>${escapeHtml(texts.denied)}</p></body>
 </html>
 `;
+}

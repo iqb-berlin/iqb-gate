@@ -1,3 +1,4 @@
+import { createMock } from '@golevelup/ts-jest';
 import { TestBed } from '@angular/core/testing';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { Subject } from 'rxjs';
@@ -12,7 +13,11 @@ describe('GateRefusalNoticeService', () => {
   beforeEach(() => {
     closed = new Subject<unknown>();
     dialog = {
-      open: jest.fn(() => ({ afterClosed: () => closed }) as unknown as MatDialogRef<GateRefusalDialogComponent>)
+      open: jest.fn(() => {
+        const ref = createMock<MatDialogRef<GateRefusalDialogComponent>>();
+        ref.afterClosed.mockReturnValue(closed);
+        return ref;
+      })
     };
     TestBed.configureTestingModule({ providers: [{ provide: MatDialog, useValue: dialog }] });
     service = TestBed.inject(GateRefusalNoticeService);

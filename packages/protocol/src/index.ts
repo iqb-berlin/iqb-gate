@@ -80,3 +80,5 @@ export interface GateRejection {
   /** For `automation-detected`: the observations that rejected the request. */
   signals?: string[];
 }
+
+export * from './claims.js';

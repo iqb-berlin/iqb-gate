@@ -1,4 +1,7 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { createMock } from '@golevelup/ts-jest';
+import {
+  type EnvironmentProviders, type Provider, provideZonelessChangeDetection
+} from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { of } from 'rxjs';
@@ -16,12 +19,12 @@ describe('GateVerificationDialogComponent, loading the widget', () => {
   const challenge = { parameters: { algorithm: 'PBKDF2/SHA-256' }, signature: 'sig' };
 
   /** The dialog, drawn by hand -- or, without zone.js, only by what Angular schedules itself. */
-  const createDialog = async (providers: unknown[] = [], zoneless = false) => {
-    globalThis.$altcha = { i18n: { set: jest.fn() } } as unknown as typeof globalThis.$altcha;
+  const createDialog = async (providers: Array<Provider | EnvironmentProviders> = [], zoneless = false) => {
+    globalThis.$altcha = createMock<typeof globalThis.$altcha>({ i18n: { set: jest.fn() } });
     await TestBed.configureTestingModule({
       imports: [GateVerificationDialogComponent],
       providers: [
-        ...providers as never[],
+        ...providers,
         { provide: GateChallengeService, useValue: { challenge: () => of(challenge), verify: () => of(true) } },
         { provide: MatDialogRef, useValue: { close: jest.fn() } }
       ]

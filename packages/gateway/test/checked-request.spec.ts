@@ -15,8 +15,10 @@ const WRITES = {
   ]
 };
 
-const check = (method: string, url: string, authorization?: string) => checkedRequest(SAVING_METHODS, 
-  WRITES, { method, url, authorization }
+const check = (method: string, url: string, authorization?: string) => checkedRequest(
+  SAVING_METHODS,
+  WRITES,
+  { method, url, authorization }
 )?.rule ?? null;
 
 describe('checkedRequest for writes', () => {
@@ -86,8 +88,10 @@ describe('checkedRequest for writes', () => {
         { name: 'other', path: /^\/api\//i }
       ]
     };
-    const checkOff = (method: string, url: string) => checkedRequest(SAVING_METHODS, 
-      withCatchAll, { method, url, authorization: undefined }
+    const checkOff = (method: string, url: string) => checkedRequest(
+      SAVING_METHODS,
+      withCatchAll,
+      { method, url, authorization: undefined }
     )?.rule ?? null;
 
     it('lets its writes through, also past a catch-all further down', () => {
@@ -123,8 +127,10 @@ const READS = {
   ]
 };
 
-const checkRead = (method: string, url: string, authorization?: string) => checkedRequest(READING_METHODS, 
-  READS, { method, url, authorization }
+const checkRead = (method: string, url: string, authorization?: string) => checkedRequest(
+  READING_METHODS,
+  READS,
+  { method, url, authorization }
 )?.rule ?? null;
 
 describe('checkedRequest for reads', () => {

@@ -69,6 +69,7 @@ describe('OidcVerifier', () => {
     const idToken = await provider.sign({ typ: undefined, azp: undefined, aud: 'studio', at_hash: 'x1' });
     expect(await verifier().verify(idToken)).toBeNull();
     expect(await verifier().verify(await provider.sign({ typ: undefined, c_hash: 'x2' }))).toBeNull();
+    expect(await verifier().verify(await provider.sign({ typ: undefined, s_hash: 'x3' }))).toBeNull();
     expect(onRejected).toHaveBeenCalledWith(expect.stringContaining('an ID token'), expect.anything());
   });
 

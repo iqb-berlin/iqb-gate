@@ -1,8 +1,9 @@
 import {
   compilePattern, ConfigError, isMapping, listAt, parseBearerPrefix, rejectUnknownKeys
 } from './config-helpers.js';
+import { bearerToken } from '@iqb/gate-oidc';
 import {
-  bearerToken, type CheckedRequest, matchesBothSpellings, type PathRule, ruleFor
+  type CheckedRequest, matchesBothSpellings, type PathRule, ruleFor
 } from './path-rules.js';
 import { pathVariants } from './request-path.js';
 
@@ -58,7 +59,7 @@ export function parseExemptions(value: unknown, section: ExemptionSection): Exem
 
 /** An exemption holds when every condition it names holds -- a path for both spellings of it. */
 function isExempt(
-  exemption: Exemption, method: string, paths: { raw: string; normalised: string }, token: string | undefined
+  exemption: Exemption, method: string, paths: { raw: string; normalised: string }, token: string | null
 ): boolean {
   if (exemption.method && exemption.method !== method) return false;
   if (exemption.path && !matchesBothSpellings(exemption.path, paths)) return false;

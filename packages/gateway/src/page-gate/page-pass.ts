@@ -1,9 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { DAY_SECONDS } from '../time.js';
 
 /** The pass cookie; only ever set over HTTPS, so always with `__Host-`. */
 export const PASS_COOKIE = '__Host-iqb-gate-pass';
-
-const DAY_SECONDS = 24 * 60 * 60;
 
 function browserOf(userAgent: string): string {
   return createHash('sha256').update(userAgent).digest('base64url').slice(0, 22);

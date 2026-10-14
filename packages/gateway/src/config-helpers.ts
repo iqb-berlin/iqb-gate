@@ -37,6 +37,17 @@ export function compilePattern(value: unknown, where: string): RegExp {
   }
 }
 
+/** The first entry of a list whose key an earlier entry has already: what a section names twice. */
+export function firstDuplicate<T>(list: T[], keyOf: (entry: T) => string): T | undefined {
+  const seen = new Set<string>();
+  return list.find(entry => {
+    const key = keyOf(entry);
+    if (seen.has(key)) return true;
+    seen.add(key);
+    return false;
+  });
+}
+
 /** A positive whole number from the file, or `fallback` where it gives none. */
 export function positiveIntegerAt(value: unknown, fallback: number, where: string): number {
   const number = value ?? fallback;

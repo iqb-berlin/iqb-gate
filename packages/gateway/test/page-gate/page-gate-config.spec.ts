@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { parsePageGate } from '../../src/page-gate/page-gate-config.js';
+import { DEFAULT_PAGE_TEXTS } from '../../src/page-gate/page-texts.js';
 
 const gate = (yamlText: string) => parsePageGate((parse(yamlText) as { pageGate: unknown }).pageGate);
 
 describe('parsePageGate', () => {
   it('is off without a section', () => {
     expect(parsePageGate(undefined)).toEqual({
-      enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: []
+      enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [], texts: DEFAULT_PAGE_TEXTS
     });
   });
 
@@ -28,9 +29,15 @@ pageGate:
       policy: [
         { name: 'ai-crawlers', userAgent: expect.any(RegExp), action: 'deny' },
         { name: 'uptime', userAgent: expect.any(RegExp), path: expect.any(RegExp), action: 'allow' }
-      ]
+      ],
+      texts: DEFAULT_PAGE_TEXTS
     });
     expect(config.policy[0].userAgent?.test('mozilla gptbot')).toBe(true);
+  });
+
+  it('takes the texts an installation gives its pages', () => {
+    expect(gate('pageGate:\n  texts:\n    continue: Continue\n').texts)
+      .toEqual({ ...DEFAULT_PAGE_TEXTS, continue: 'Continue' });
   });
 
   it('refuses what it cannot use', () => {

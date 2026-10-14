@@ -40,8 +40,11 @@ const ALGORITHMS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256
 /** What an access token may say it is, in its header; an ID token says nothing, or `JWT`. */
 const ACCESS_TOKEN_HEADER_TYPES = ['jwt', 'at+jwt', 'application/at+jwt'];
 
-/** Claims only an ID token carries (OpenID Connect Core): the hashes of the codes issued with it. */
-const ID_TOKEN_CLAIMS = ['at_hash', 'c_hash'];
+/**
+ * Claims only an ID token carries (OpenID Connect Core): the hashes of what was issued with it.
+ * They are optional in the code flow, so their absence proves nothing -- `audience` does.
+ */
+const ID_TOKEN_CLAIMS = ['at_hash', 'c_hash', 's_hash'];
 
 const DISCOVERY_TIMEOUT_MS = 5000;
 
@@ -56,6 +59,19 @@ class TokenRejected extends Error {}
 
 /** The provider could not be asked. */
 class ProviderUnavailable extends Error {}
+
+/** Refuses a token whose header says it is no access token -- before its signature is checked. */
+function checkHeaderType(token: string): void {
+  let type: unknown;
+  try {
+    type = decodeProtectedHeader(token).typ;
+  } catch {
+    throw new TokenRejected('the token is no JWT');
+  }
+  if (type !== undefined && !ACCESS_TOKEN_HEADER_TYPES.includes(String(type).toLowerCase())) {
+    throw new TokenRejected(`the token is of the type ${String(type)}`);
+  }
+}
 
 /** An issuer as compared: `.../realms/iqb/` and `.../realms/iqb` are the same provider. */
 const withoutTrailingSlash = (issuer: string): string => issuer.replace(/\/+$/, '');
@@ -78,7 +94,7 @@ export class OidcVerifier {
 
   async verify(token: string): Promise<OidcIdentity | null> {
     try {
-      this.checkHeader(token);
+      checkHeaderType(token);
       const { payload } = await jwtVerify(token, await this.keys(), {
         audience: this.options.audience,
         algorithms: ALGORITHMS,
@@ -96,18 +112,6 @@ export class OidcVerifier {
         this.options.onRejected?.(reason, error);
       }
       return null;
-    }
-  }
-
-  private checkHeader(token: string): void {
-    let type: unknown;
-    try {
-      type = decodeProtectedHeader(token).typ;
-    } catch {
-      throw new TokenRejected('the token is no JWT');
-    }
-    if (type !== undefined && !ACCESS_TOKEN_HEADER_TYPES.includes(String(type).toLowerCase())) {
-      throw new TokenRejected(`the token is of the type ${String(type)}`);
     }
   }
 

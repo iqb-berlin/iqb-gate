@@ -1,6 +1,7 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type { GateOutcome } from '../session/gate-assessment.js';
 import { RepeatedRejections } from './repeated-rejections.js';
+import { prepareAuditSchema } from './audit-schema.js';
 
 /** One checked write or refused read as the gateway hands it over; the time and the repeats are set here. */
 export interface AuditRecord {
@@ -43,7 +44,8 @@ export interface AuditFilter {
   limit?: number;
 }
 
-interface AuditRow {
+/** A row as SQLite hands it back; a `type`, so that SQLite's own row type converts to it. */
+type AuditRow = {
   id: number;
   created_at: number;
   session_id: string | null;
@@ -57,31 +59,12 @@ interface AuditRow {
   repeated: number;
   blocking_signals: string;
   logged_signals: string;
-}
+};
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
 /** How long identical rejections of a session are folded into one entry. */
 const REPEAT_WINDOW_MS = 60 * 1000;
-
-const SCHEMA = `
-  CREATE TABLE IF NOT EXISTS audit (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at INTEGER NOT NULL,
-    session_id TEXT,
-    user TEXT,
-    user_verified INTEGER NOT NULL DEFAULT 0,
-    method TEXT NOT NULL,
-    path TEXT NOT NULL,
-    rule TEXT NOT NULL,
-    status_code INTEGER NOT NULL,
-    outcome TEXT NOT NULL,
-    repeated INTEGER NOT NULL DEFAULT 0,
-    blocking_signals TEXT NOT NULL,
-    logged_signals TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS audit_created_at ON audit (created_at);
-`;
 
 function toEntry(row: AuditRow): AuditEntry {
   return {
@@ -128,9 +111,7 @@ export class AuditLog {
       // With WAL, NORMAL loses at most the last entries on a power failure, never the file, and does
       // not wait for the disk on every entry -- the event loop that serves all traffic would wait too
       this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
-      this.adoptWriteAudit();
-      this.db.exec(SCHEMA);
-      this.addMissingColumns();
+      prepareAuditSchema(this.db);
       this.insert = this.db.prepare(`
         INSERT INTO audit (
           created_at, session_id, user, user_verified, method, path, rule, status_code, outcome,
@@ -146,51 +127,6 @@ export class AuditLog {
   }
 
   /**
-   * A log file from before reads were checked keeps its entries in a table named for writes: it is
-   * renamed once, with its index, and keeps every entry. Where both tables exist -- an older
-   * gateway ran again after this one had started -- what the older one wrote joins the log.
-   */
-  private adoptWriteAudit(): void {
-    const tables = (this.db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('write_audit', 'audit')")
-      .all() as Array<{ name: string }>).map(({ name }) => name);
-    if (!tables.includes('write_audit')) return;
-    if (!tables.includes('audit')) {
-      this.inTransaction('ALTER TABLE write_audit RENAME TO audit; DROP INDEX IF EXISTS write_audit_created_at;');
-      return;
-    }
-    const auditColumns = this.columnsOf('audit');
-    const columns = this.columnsOf('write_audit')
-      .filter(column => column !== 'id' && auditColumns.includes(column))
-      .join(', ');
-    this.inTransaction(`INSERT INTO audit (${columns}) SELECT ${columns} FROM write_audit; DROP TABLE write_audit;`);
-  }
-
-  /** Runs the statements all or none: a step that fails leaves the file as it was. */
-  private inTransaction(statements: string): void {
-    this.db.exec('BEGIN');
-    try {
-      this.db.exec(statements);
-      this.db.exec('COMMIT');
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
-  }
-
-  private columnsOf(table: string): string[] {
-    return (this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
-      .map(column => column.name);
-  }
-
-  /** A log file from before a column existed gets it, with its default for the old entries. */
-  private addMissingColumns(): void {
-    if (!this.columnsOf('audit').includes('user_verified')) {
-      this.db.exec('ALTER TABLE audit ADD COLUMN user_verified INTEGER NOT NULL DEFAULT 0');
-    }
-  }
-
-  /**
    * Writes one checked request. `clientAddress` -- where it came from, as the gateway sees it --
    * only decides which rejections fold together; it is not stored.
    */
@@ -199,8 +135,17 @@ export class AuditLog {
     if (kind && this.rejections.isRepeat(kind, now)) return;
     try {
       const result = this.insert.run(
-        now, entry.sessionId, entry.user, entry.userVerified ? 1 : 0, entry.method, entry.path, entry.rule,
-        entry.statusCode, entry.outcome, JSON.stringify(entry.blockingSignals), JSON.stringify(entry.loggedSignals)
+        now,
+        entry.sessionId,
+        entry.user,
+        entry.userVerified ? 1 : 0,
+        entry.method,
+        entry.path,
+        entry.rule,
+        entry.statusCode,
+        entry.outcome,
+        JSON.stringify(entry.blockingSignals),
+        JSON.stringify(entry.loggedSignals)
       );
       if (kind) this.rejections.opened(kind, Number(result.lastInsertRowid), now);
     } catch (error) {
@@ -252,7 +197,7 @@ export class AuditLog {
     const limit = Math.min(Math.max(filter.limit || DEFAULT_LIMIT, 1), MAX_LIMIT);
     const rows = this.db
       .prepare(`SELECT * FROM audit ${where} ORDER BY created_at DESC, id DESC LIMIT ?`)
-      .all(...values, limit) as unknown as AuditRow[];
+      .all(...values, limit) as AuditRow[];
     return rows.map(toEntry);
   }
 

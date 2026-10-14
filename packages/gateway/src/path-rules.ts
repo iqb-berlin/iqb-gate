@@ -1,5 +1,5 @@
 import {
-  compilePattern, ConfigError, isMapping, listAt, rejectUnknownKeys
+  compilePattern, ConfigError, firstDuplicate, isMapping, listAt, rejectUnknownKeys
 } from './config-helpers.js';
 
 /** Requests whose path matches are checked; the name stands in the audit log. */
@@ -51,7 +51,7 @@ export function parseRules(
   value: unknown, section: string, rulesOff: { setting: string; value: string | undefined }
 ): PathRule[] {
   const rules = listAt(value, `${section}.rules`).map((entry, index) => parseRule(entry, `${section}.rules[${index}]`));
-  const duplicate = rules.find((rule, index) => rules.findIndex(other => other.name === rule.name) !== index);
+  const duplicate = firstDuplicate(rules, rule => rule.name);
   if (duplicate) throw new ConfigError(`${section}.rules names ${duplicate.name} twice.`);
   const off = parseRulesOff(rulesOff.value, rules, rulesOff.setting, section);
   return rules.map(rule => (off.has(rule.name) ? { ...rule, off: true } : rule));
@@ -60,6 +60,14 @@ export function parseRules(
 /** Whether any rule is left to check requests under. */
 export function hasActiveRules(rules: PathRule[]): boolean {
   return rules.some(rule => !rule.off);
+}
+
+/**
+ * Whether a gate checks anything: enforced, with a rule on. Only then is it installed -- and only
+ * then does the gateway need a secret that outlives a restart.
+ */
+export function checksAnything(scope: { enforce: boolean; rules: PathRule[] }): boolean {
+  return scope.enforce && hasActiveRules(scope.rules);
 }
 
 /**
@@ -77,10 +85,4 @@ export function ruleFor(rules: PathRule[], paths: { raw: string; normalised: str
 /** A pattern of an exemption holds only for both spellings of a path. */
 export function matchesBothSpellings(pattern: RegExp, paths: { raw: string; normalised: string }): boolean {
   return pattern.test(paths.raw) && pattern.test(paths.normalised);
-}
-
-/** The token of an `Authorization: Bearer` header. */
-export function bearerToken(authorization: string | undefined): string | undefined {
-  const match = /^Bearer\s+(\S+)$/i.exec(authorization ?? '');
-  return match?.[1];
 }

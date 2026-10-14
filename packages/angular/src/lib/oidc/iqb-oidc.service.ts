@@ -3,42 +3,8 @@ import { OidcSecurityService } from 'angular-auth-oidc-client';
 import {
   catchError, combineLatest, distinctUntilChanged, map, type Observable, of, switchMap
 } from 'rxjs';
-
-/** Who is logged in, for the application's view. */
-export interface IqbOidcIdentity {
-  subject: string;
-  /** `preferred_username`, else the e-mail address, else the subject. */
-  username: string;
-  email: string | null;
-  /**
-   * The realm's roles from the access token, where Keycloak puts them by default -- for what the
-   * view shows. What a role allows, the backend decides on the token itself.
-   */
-  roles: string[];
-}
-
-interface Claims {
-  sub?: unknown;
-  preferred_username?: unknown;
-  email?: unknown;
-  realm_access?: { roles?: unknown };
-}
-
-const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
-
-/** The identity of an ID token's claims, with the roles of the access token's; `null` without a subject. */
-export function identityOfClaims(idToken: unknown, accessToken: unknown = {}): IqbOidcIdentity | null {
-  const claims = (idToken ?? {}) as Claims;
-  const subject = text(claims.sub);
-  if (!subject) return null;
-  const roles = ((accessToken ?? {}) as Claims).realm_access?.roles;
-  return {
-    subject,
-    username: text(claims.preferred_username) ?? text(claims.email) ?? subject,
-    email: text(claims.email),
-    roles: Array.isArray(roles) ? roles.map(text).filter((role): role is string => role !== null) : []
-  };
-}
+import { IQB_OIDC_OPTIONS } from './iqb-oidc-options';
+import { identityOfClaims, type IqbOidcIdentity } from '../utils/identity-of-claims';
 
 /**
  * The login as the application sees it, without the OpenID Connect library's vocabulary: whether
@@ -50,6 +16,7 @@ export function identityOfClaims(idToken: unknown, accessToken: unknown = {}): I
 })
 export class IqbOidcService {
   private readonly oidc = inject(OidcSecurityService);
+  private readonly clientId = inject(IQB_OIDC_OPTIONS, { optional: true })?.clientId;
 
   /**
    * Changes only when someone logs in or out -- the library reports again after every renewal of
@@ -63,7 +30,7 @@ export class IqbOidcService {
   readonly identity$: Observable<IqbOidcIdentity | null> = this.isAuthenticated$.pipe(
     switchMap(authenticated => (authenticated
       ? combineLatest([this.oidc.getPayloadFromIdToken(), this.oidc.getPayloadFromAccessToken()]).pipe(
-        map(([idToken, accessToken]) => identityOfClaims(idToken, accessToken)),
+        map(([idToken, accessToken]) => identityOfClaims(idToken, accessToken, this.clientId)),
         catchError(() => of(null))
       )
       : of(null)))

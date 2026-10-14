@@ -1,6 +1,7 @@
 import {
-  compilePattern, ConfigError, isMapping, listAt, positiveIntegerAt, rejectUnknownKeys
+  compilePattern, ConfigError, firstDuplicate, isMapping, listAt, positiveIntegerAt, rejectUnknownKeys
 } from '../config-helpers.js';
+import { type PageTexts, parsePageTexts } from './page-texts.js';
 
 export type PageAction = 'allow' | 'deny' | 'challenge';
 
@@ -20,6 +21,8 @@ export interface PageGateConfig {
   challengesPerAddressAndMinute: number;
   /** First match decides; without a match, a navigation is challenged. */
   policy: PagePolicyRule[];
+  /** What the interstitial and the denied page say (`pageGate.texts`, else German defaults). */
+  texts: PageTexts;
 }
 
 const DEFAULTS = { passDays: 7, challengesPerAddressAndMinute: 120 };
@@ -51,12 +54,12 @@ function parseRule(entry: unknown, index: number): PagePolicyRule {
 export function parsePageGate(section: unknown): PageGateConfig {
   const gate = section ?? {};
   if (!isMapping(gate)) throw new ConfigError('pageGate has to be a mapping.');
-  rejectUnknownKeys(gate, ['enabled', 'passDays', 'challengesPerAddressAndMinute', 'policy'], 'pageGate');
+  rejectUnknownKeys(gate, ['enabled', 'passDays', 'challengesPerAddressAndMinute', 'policy', 'texts'], 'pageGate');
   if (gate.enabled !== undefined && typeof gate.enabled !== 'boolean') {
     throw new ConfigError('pageGate.enabled has to be true or false.');
   }
   const policy = listAt(gate.policy, 'pageGate.policy').map(parseRule);
-  const duplicate = policy.find((rule, index) => policy.findIndex(other => other.name === rule.name) !== index);
+  const duplicate = firstDuplicate(policy, rule => rule.name);
   if (duplicate) throw new ConfigError(`pageGate.policy names ${duplicate.name} twice.`);
   return {
     enabled: gate.enabled === true,
@@ -66,6 +69,7 @@ export function parsePageGate(section: unknown): PageGateConfig {
       DEFAULTS.challengesPerAddressAndMinute,
       'pageGate.challengesPerAddressAndMinute'
     ),
-    policy
+    policy,
+    texts: parsePageTexts(gate.texts)
   };
 }

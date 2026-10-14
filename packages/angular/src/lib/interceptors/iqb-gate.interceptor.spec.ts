@@ -4,7 +4,9 @@ import {
   withInterceptors, withInterceptorsFromDi
 } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { EnvironmentInjector, runInInjectionContext } from '@angular/core';
+import {
+  EnvironmentInjector, type EnvironmentProviders, type Provider, runInInjectionContext
+} from '@angular/core';
 import {
   firstValueFrom, type Observable, of, throwError
 } from 'rxjs';
@@ -163,10 +165,10 @@ describe('iqbGateInterceptor', () => {
 describe('the interceptor in an HTTP client', () => {
   const signals = { webdriver: false } as ClientSignals;
 
-  const setUp = (providers: unknown[]) => {
+  const setUp = (providers: Array<Provider | EnvironmentProviders>) => {
     TestBed.configureTestingModule({
       providers: [
-        ...providers as never[],
+        ...providers,
         provideHttpClientTesting(),
         { provide: GateInputActivityService, useValue: { signals: () => signals } },
         { provide: GateVerificationService, useValue: { verify: () => of(true) } },

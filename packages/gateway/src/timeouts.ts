@@ -9,6 +9,8 @@ import { pathVariants } from './request-path.js';
  * export asked for as `/API/...` reaches the same controller and needs the same time.
  */
 export function timeoutSecondsFor(url: string, timeouts: GatewayConfig['timeouts']): number {
+  // Asked for every request, assets included: no path parsed where no prefix could cover it
+  if (!timeouts.paths.length) return timeouts.defaultSeconds;
   const { raw, normalised } = pathVariants(url);
   const spellings = [raw.toLowerCase(), normalised.toLowerCase()];
   const covers = (prefix: string) => {

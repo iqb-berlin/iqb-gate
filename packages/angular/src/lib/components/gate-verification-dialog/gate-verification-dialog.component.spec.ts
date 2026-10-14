@@ -1,3 +1,4 @@
+import { createMock } from '@golevelup/ts-jest';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { By } from '@angular/platform-browser';
@@ -27,7 +28,7 @@ describe('GateVerificationDialogComponent', () => {
     dialogRef = { close: jest.fn() };
     i18nSet = jest.fn();
     // What loading 'altcha' provides in the browser
-    globalThis.$altcha = { i18n: { set: i18nSet } } as unknown as typeof globalThis.$altcha;
+    globalThis.$altcha = createMock<typeof globalThis.$altcha>({ i18n: { set: i18nSet } });
 
     await TestBed.configureTestingModule({
       imports: [GateVerificationDialogComponent],

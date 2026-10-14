@@ -4,8 +4,9 @@ import {
 } from 'vitest';
 import {
   Controller, Get, type INestApplication, Inject, Injectable, Module, Req, UseGuards,
-  type ExecutionContext, UnauthorizedException
+  type ExecutionContext, type ModuleMetadata, type Provider, UnauthorizedException
 } from '@nestjs/common';
+import { createMock } from '@golevelup/ts-vitest';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import type { AddressInfo } from 'node:net';
@@ -48,11 +49,8 @@ describe('OidcAuthGuard', () => {
   let app: INestApplication | undefined;
   let base: string;
 
-  const start = async (imports: unknown[], providers: unknown[] = []) => {
-    const moduleRef = await Test.createTestingModule({
-      imports: imports as never[],
-      providers: providers as never[]
-    }).compile();
+  const start = async (imports: NonNullable<ModuleMetadata['imports']>, providers: Provider[] = []) => {
+    const moduleRef = await Test.createTestingModule({ imports, providers }).compile();
     app = moduleRef.createNestApplication({ logger: false });
     await app.listen(0, '127.0.0.1');
     base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
@@ -133,7 +131,7 @@ describe('OidcAuthGuard', () => {
 
   it('refuses what is no HTTP request, instead of failing on it', async () => {
     const guard = new OidcAuthGuard(new OidcVerifier({ issuer: provider.issuer }), null);
-    const graphql = { getType: () => 'graphql' } as unknown as ExecutionContext;
+    const graphql = createMock<ExecutionContext>({ getType: () => 'graphql' });
     await expect(guard.canActivate(graphql)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

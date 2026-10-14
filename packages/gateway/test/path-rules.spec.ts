@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bearerToken, hasActiveRules, matchesBothSpellings, parseRules, ruleFor
+  checksAnything, hasActiveRules, matchesBothSpellings, parseRules, ruleFor
 } from '../src/path-rules.js';
 import { ConfigError } from '../src/config-helpers.js';
 import { pathVariants } from '../src/request-path.js';
@@ -62,15 +62,23 @@ describe('ruleFor', () => {
   });
 });
 
-describe('matchesBothSpellings and bearerToken', () => {
+describe('matchesBothSpellings', () => {
   it('holds a pattern only for both spellings of a path', () => {
     expect(matchesBothSpellings(/^\/api\/packages\//i, pathVariants('/api/packages/GeoGebra/x.js'))).toBe(true);
     expect(matchesBothSpellings(/^\/api\/packages\//i, pathVariants('/api/packages/../workspaces/5'))).toBe(false);
   });
+});
 
-  it('reads the token of a Bearer header', () => {
-    expect(bearerToken('Bearer sl_1_x')).toBe('sl_1_x');
-    expect(bearerToken('Basic abc')).toBeUndefined();
-    expect(bearerToken(undefined)).toBeUndefined();
+describe('checksAnything', () => {
+  const rule = { name: 'workspace', path: /^\/api\/workspaces\//i };
+
+  it('is true for an enforced gate with a rule on', () => {
+    expect(checksAnything({ enforce: true, rules: [rule] })).toBe(true);
+  });
+
+  it('is false when not enforced, without rules, or with every rule off', () => {
+    expect(checksAnything({ enforce: false, rules: [rule] })).toBe(false);
+    expect(checksAnything({ enforce: true, rules: [] })).toBe(false);
+    expect(checksAnything({ enforce: true, rules: [{ ...rule, off: true }] })).toBe(false);
   });
 });

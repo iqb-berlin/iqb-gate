@@ -2,11 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { parse } from 'yaml';
 import { GATE_PREFIX } from '@iqb/gate-protocol';
 import {
-  ConfigError, isMapping, isPositiveInteger, listAt, positiveIntegerAt, rejectUnknownKeys
+  ConfigError, firstDuplicate, isMapping, isPositiveInteger, listAt, positiveIntegerAt, rejectUnknownKeys
 } from './config-helpers.js';
 import { parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
 import { parseReadGate, type ReadGateConfig } from './read-gate/read-gate-config.js';
-import { hasActiveRules } from './path-rules.js';
+import { checksAnything } from './path-rules.js';
 import { type PageGateConfig, parsePageGate } from './page-gate/page-gate-config.js';
 import { type OidcConfig, parseOidc } from './oidc-config.js';
 
@@ -163,9 +163,7 @@ function parsePathUpstream(entry: unknown, index: number): PathUpstream {
 /** Reads the `upstreams` section: requests below each prefix go to its upstream, the rest to IQB_GATE_UPSTREAM. */
 function parseUpstreams(section: unknown): PathUpstream[] {
   const upstreams = listAt(section, 'upstreams').map(parsePathUpstream);
-  const duplicate = upstreams.find(
-    (path, index) => upstreams.findIndex(other => other.prefix === path.prefix) !== index
-  );
+  const duplicate = firstDuplicate(upstreams, upstream => upstream.prefix);
   if (duplicate) throw new ConfigError(`upstreams names ${duplicate.prefix} twice.`);
   return upstreams;
 }
@@ -180,7 +178,7 @@ function parseTimeouts(section: unknown): GatewayConfig['timeouts'] {
     throw new ConfigError('timeouts.default has to be a positive whole number of seconds.');
   }
   const paths = listAt(timeouts.paths, 'timeouts.paths').map(parsePathTimeout);
-  const duplicate = paths.find((path, index) => paths.findIndex(other => other.prefix === path.prefix) !== index);
+  const duplicate = firstDuplicate(paths, path => path.prefix);
   if (duplicate) throw new ConfigError(`timeouts.paths names ${duplicate.prefix} twice.`);
   return { defaultSeconds, paths };
 }
@@ -269,9 +267,7 @@ export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayCo
     timeouts: parseTimeouts(file.timeouts),
     secret: parseSecret(
       env.IQB_GATE_SECRET,
-      (writeGate.enforce && hasActiveRules(writeGate.rules))
-        || (readGate.enforce && hasActiveRules(readGate.rules))
-        || pageGate.enabled
+      checksAnything(writeGate) || checksAnything(readGate) || pageGate.enabled
     ),
     challenges: parseChallenges(file.challenges),
     writeGate,

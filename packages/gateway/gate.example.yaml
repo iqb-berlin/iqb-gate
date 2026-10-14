@@ -74,6 +74,11 @@ pageGate:
   policy:
     - { name: ai-crawlers, userAgent: '(GPTBot|CCBot|ClaudeBot|Bytespider|PerplexityBot)', action: deny }
     - { name: uptime, userAgent: '^UptimeRobot/', path: '^/$', action: allow }
+  # What the interstitial and the denied page say; German by default. Any of them can be replaced.
+  # texts:
+  #   lang: en
+  #   title: One moment, please …
+  #   continue: Continue
 
 # The OpenID Connect provider whose tokens name the writers in the audit log, as checked ("geprüft").
 # Without it, a writer is named by writeGate.userClaim from the token, unchecked. The gateway never

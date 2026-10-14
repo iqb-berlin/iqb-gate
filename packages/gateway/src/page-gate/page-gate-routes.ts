@@ -2,14 +2,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ProofOfWork } from '../proof-of-work.js';
 import type { RateLimit } from '../rate-limit.js';
 import { answerChallenge } from '../challenge-route.js';
-import { pathVariants } from '../request-path.js';
 import { DAY_SECONDS } from '../time.js';
 import type { PageGateConfig } from './page-gate-config.js';
 import { isNavigation } from './navigation.js';
 import { decidePage } from './page-policy.js';
 import { issuePass, PASS_COOKIE, passHolds } from './page-pass.js';
 import {
-  DENIED_PAGE, INTERSTITIAL_CSP, interstitialPage, PAGE_CHALLENGE_PATH, PAGE_GATE_SCRIPT, PAGE_GATE_SCRIPT_PATH,
+  deniedPage, INTERSTITIAL_CSP, interstitialPage, PAGE_CHALLENGE_PATH, PAGE_GATE_SCRIPT, PAGE_GATE_SCRIPT_PATH,
   PASS_PATH, WIDGET_SCRIPT_PATH
 } from './interstitial.js';
 import { versioned, type VersionedScript } from './widget-script.js';
@@ -80,16 +79,17 @@ export function pageGatePreHandler(
   scripts: { widget: VersionedScript; pageGate: VersionedScript },
   passKey: string
 ) {
-  const page = interstitialPage(scripts.widget.version, scripts.pageGate.version);
+  const page = interstitialPage(scripts.widget.version, scripts.pageGate.version, config.texts);
+  const denied = deniedPage(config.texts);
   return async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | undefined> => {
     const userAgent = request.headers['user-agent'] ?? '';
-    const decision = decidePage(config.policy, { userAgent, paths: pathVariants(request.url) });
+    const decision = decidePage(config.policy, { userAgent, url: request.url });
     const navigation = isNavigation(request.method, request.headers);
     if (decision.action === 'deny') {
       request.log.info({ rule: decision.rule }, 'request denied by the page policy');
       reply.code(403).header('cache-control', 'no-store');
       return navigation
-        ? reply.type('text/html; charset=utf-8').send(DENIED_PAGE)
+        ? reply.type('text/html; charset=utf-8').send(denied)
         : reply.send({ statusCode: 403, error: 'Forbidden', message: 'This client is not allowed here.' });
     }
     if (request.protocol !== 'https' || !navigation || decision.action === 'allow') return undefined;

@@ -56,13 +56,13 @@ describe('client signals', () => {
   });
 
   describe('detectSoftwareRenderer', () => {
-    const canvasWith = (renderer: string | null): (() => HTMLCanvasElement) => () => ({
+    const canvasWith = (renderer: string | null) => () => ({
       getContext: () => (renderer === null ? null : {
         RENDERER: 7937,
         getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 37446 }),
         getParameter: () => renderer
       })
-    } as unknown as HTMLCanvasElement);
+    });
 
     it('should recognise software renderers', () => {
       expect(detectSoftwareRenderer(canvasWith('Google SwiftShader'))).toBe(true);

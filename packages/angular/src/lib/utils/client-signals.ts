@@ -41,8 +41,17 @@ export function collectClientSignals(
   };
 }
 
+/** What of a WebGL context the renderer check reads; a canvas's `webgl` context has it. */
+interface RendererSource {
+  readonly RENDERER: number;
+  getExtension(name: 'WEBGL_debug_renderer_info'): { readonly UNMASKED_RENDERER_WEBGL: number } | null;
+  getParameter(name: number): unknown;
+}
+
 /** Whether WebGL draws in software. `false` where WebGL or the renderer name is not available. */
-export function detectSoftwareRenderer(createCanvas: () => HTMLCanvasElement): boolean {
+export function detectSoftwareRenderer(
+  createCanvas: () => { getContext(contextId: 'webgl'): RendererSource | null }
+): boolean {
   try {
     const gl = createCanvas().getContext('webgl');
     if (!gl) return false;

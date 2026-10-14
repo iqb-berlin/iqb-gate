@@ -1,8 +1,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import {
-  Component, inject, OnDestroy, signal
+  Component, computed, inject, OnDestroy, signal
 } from '@angular/core';
-import { AsyncPipe } from '@angular/common';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButton } from '@angular/material/button';
 import { Subject, takeUntil } from 'rxjs';
@@ -22,11 +22,14 @@ interface Note {
   selector: 'iqb-demo-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
-  imports: [AsyncPipe, FormsModule, MatButton]
+  imports: [FormsModule, MatButton]
 })
 export class AppComponent implements OnDestroy {
   private readonly http = inject(HttpClient);
   readonly oidc = inject(IqbOidcService);
+  readonly identity = toSignal(this.oidc.identity$, { initialValue: null });
+  /** The roles as the page names them, worked out when the identity changes, not with every check. */
+  readonly roles = computed(() => this.identity()?.roles.join(', ') ?? '');
   readonly note = signal<Note | null>(null);
   readonly status = signal('');
   text = '';

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError, parseConfig } from '../src/config.js';
+import { DEFAULT_PAGE_TEXTS } from '../src/page-gate/page-texts.js';
 
 const UPSTREAM = { IQB_GATE_UPSTREAM: 'http://frontend:8080' };
 const SECRET = 'a-secret-of-at-least-32-characters!';
@@ -23,7 +24,9 @@ describe('parseConfig', () => {
       readGate: {
         enforce: true, rules: [], exempt: [], limit: { limit: 600, windowSeconds: 60 }, userClaim: undefined
       },
-      pageGate: { enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [] },
+      pageGate: {
+        enabled: false, passDays: 7, challengesPerAddressAndMinute: 120, policy: [], texts: DEFAULT_PAGE_TEXTS
+      },
       oidc: undefined,
       audit: { file: '/var/lib/iqb-gate/audit.sqlite', retentionDays: 90, key: undefined }
     });

@@ -3,7 +3,8 @@ import { OidcSecurityService } from 'angular-auth-oidc-client';
 import {
   BehaviorSubject, firstValueFrom, of, throwError
 } from 'rxjs';
-import { identityOfClaims, IqbOidcService } from './iqb-oidc.service';
+import { IqbOidcService } from './iqb-oidc.service';
+import { IQB_OIDC_OPTIONS } from './iqb-oidc-options';
 
 describe('IqbOidcService', () => {
   let service: IqbOidcService;
@@ -56,6 +57,25 @@ describe('IqbOidcService', () => {
     });
   });
 
+  it('should add the roles of the configured client', async () => {
+    oidc.getPayloadFromAccessToken.mockReturnValue(of({
+      sub: 's1', realm_access: { roles: ['admin'] }, resource_access: { studio: { roles: ['editor'] } }
+    }));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: OidcSecurityService, useValue: oidc },
+        {
+          provide: IQB_OIDC_OPTIONS,
+          useValue: { issuer: 'https://login.example.org', clientId: 'studio', apiUrls: [] }
+        }
+      ]
+    });
+    oidc.isAuthenticated$.next({ isAuthenticated: true });
+    const identity = await firstValueFrom(TestBed.inject(IqbOidcService).identity$);
+    expect(identity?.roles).toEqual(['admin', 'editor']);
+  });
+
   it('should go to the provider to log in, and revoke the tokens to log out', () => {
     service.login();
     expect(oidc.authorize).toHaveBeenCalled();
@@ -69,17 +89,5 @@ describe('IqbOidcService', () => {
     service.logout();
     expect(oidc.logoffLocal).toHaveBeenCalled();
     expect(oidc.logoff).toHaveBeenCalled();
-  });
-});
-
-describe('identityOfClaims', () => {
-  it('should fall back to the e-mail address, then the subject, for a name', () => {
-    expect(identityOfClaims({ sub: 's1', email: 'a@b.org' })?.username).toBe('a@b.org');
-    expect(identityOfClaims({ sub: 's1', preferred_username: '  ' })?.username).toBe('s1');
-  });
-
-  it('should know nobody without a subject', () => {
-    expect(identityOfClaims(null)).toBeNull();
-    expect(identityOfClaims({ preferred_username: 'anna' })).toBeNull();
   });
 });

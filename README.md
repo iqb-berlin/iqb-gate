@@ -1,7 +1,8 @@
 # iqb-gate
 
 A security gateway for the IQB applications -- studio-lite, Testcenter and coding-box. It sits in
-front of an application as a reverse proxy and will offer, step by step:
+front of an application as a reverse proxy, or behind Traefik as its ForwardAuth (see
+[Behind Traefik](#behind-traefik-forwardauth)), and will offer, step by step:
 
 1. **a transparent proxy** -- streaming, WebSockets, server-sent events, timeouts and upstreams per path *(done)*
 2. **ALTCHA for writes** -- saves matched by path rules come only from people: proof-of-work,
@@ -19,7 +20,7 @@ The gateway owns the paths below `/.iqb-gate/`; everything else goes to the appl
 
 | Package | What it is |
 |---|---|
-| `packages/gateway` | the reverse proxy (Node 24, Fastify), shipped as a Docker image |
+| `packages/gateway` | the gateway (Node 24, Fastify) -- a reverse proxy, Traefik's ForwardAuth, or both -- shipped as a Docker image |
 | `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types (ES modules and CommonJS) |
 | `packages/oidc` | `@iqb/gate-oidc`: checks OpenID Connect access tokens against the provider's keys (Node) |
 | `packages/nest` | `@iqb/gate-nest`: the same for NestJS backends -- a module, a guard, a parameter decorator |
@@ -34,7 +35,8 @@ docker run -p 8088:8080 -e IQB_GATE_UPSTREAM=http://frontend:8080 iqb-gate:local
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `IQB_GATE_UPSTREAM` | -- (required) | origin of the application, e.g. `http://frontend:8080` |
+| `IQB_GATE_UPSTREAM` | -- (required without ForwardAuth) | origin of the application, e.g. `http://frontend:8080`; missing, the gateway stops at start -- unless `IQB_GATE_FORWARD_AUTH=on`, then it runs without a proxy |
+| `IQB_GATE_FORWARD_AUTH` | `off` | `on` answers Traefik's ForwardAuth at `/.iqb-gate/auth`, see [Behind Traefik](#behind-traefik-forwardauth) |
 | `IQB_GATE_PORT` | `8080` | port the gateway listens on |
 | `IQB_GATE_HOST` | `0.0.0.0` | address the gateway listens on |
 | `IQB_GATE_TRUST_PROXY` | `false` | the proxies in front (Traefik) whose `X-Forwarded-*` is believed, as comma-separated addresses or CIDRs, e.g. `172.16.0.0/12`; `true` is refused, as it would believe any client's `X-Forwarded-For` |
@@ -69,6 +71,58 @@ the configured host and port.
 
 **Stopping:** on `SIGTERM` the gateway stops accepting requests and gives open ones 8 seconds --
 below Docker's default of 10 -- before it cuts them.
+
+## Behind Traefik (ForwardAuth)
+
+Instead of passing every request through, the gateway can answer Traefik's
+[ForwardAuth](https://doc.traefik.io/traefik/middlewares/http/forwardauth/): Traefik asks
+`/.iqb-gate/auth` about each request -- its headers only -- and streams it to the application itself
+once the gateway answers 200. Uploads and media never pass through Node. The checks are the same as
+in the proxy; the gateway reads the request it is asked about from `X-Forwarded-Method`, `-Uri` and
+`-Proto`, which Traefik sets, and answers 400 to a request without them, or with a list where one
+method or address belongs. `IQB_GATE_FORWARD_AUTH=on` switches it on; without `IQB_GATE_UPSTREAM`
+the gateway then runs only this way, with it both. A body Traefik might pass on
+(`forwardBody`, `preserveRequestMethod`) is left unread.
+
+**One gateway per application.** The rules apply to every request Traefik asks about, whatever the
+host, and the audit log records method and path, not the host: entries of two applications could
+not be told apart.
+
+What Traefik (v3, see `examples/traefik`) needs:
+
+```yaml
+# The gateway's own paths, straight to it -- but not the auth path, which only Traefik asks
+- "traefik.http.routers.iqb-gate.rule=PathPrefix(`/.iqb-gate`) && !Path(`/.iqb-gate/auth`)"
+- "traefik.http.services.iqb-gate.loadbalancer.server.port=8080"
+# The middleware
+- "traefik.http.middlewares.iqb-gate-auth.forwardauth.address=http://iqb-gate:8080/.iqb-gate/auth"
+- "traefik.http.middlewares.iqb-gate-auth.forwardauth.trustForwardHeader=false"
+# ... and on each application router: middlewares=...,iqb-gate-auth
+```
+
+- **`trustForwardHeader` stays off.** Otherwise a client's own `X-Forwarded-Uri` reached the gateway,
+  and it would decide on a request the client only claims to send.
+- **No cookies need passing on.** The gateway starts a session only with a refusal -- a new session
+  has solved nothing yet, so its first checked request gets 428 -- and an answer other than 2xx
+  reaches the client as it is, cookies included. A 200 carries none. (`authResponseHeaders` would
+  not help anyway: it adds headers to the request to the application, not to the answer.)
+- **`IQB_GATE_TRUST_PROXY`** names Traefik, as in front of the proxy: the client's address -- for the
+  challenge limits and the audit log -- comes from its `X-Forwarded-For`.
+- **Traefik ends TLS.** Whether a request came over HTTPS is what Traefik's subrequest says, and with
+  `trustForwardHeader` off it says so from its own connection. Behind a load balancer that ends TLS
+  first, every request would count as plain HTTP: no page gate, no `Secure` session cookie.
+
+What is different from the proxy:
+
+- **The page gate answers 401**, with `WWW-Authenticate: iqb-gate`, at the address the browser
+  opened: Traefik would pass a 2xx on to the application. Browsers show the page all the same and
+  ask for no password; after the challenge the page reloads its address, fragment included.
+- **The audit log** records the gateway's own answer as status -- 200 for a request it let through
+  -- since it does not see the application's.
+- **Each request costs a subrequest** on the routers that have the middleware: put it only on those
+  that need the gates. Testcenter, for one, keeps test-taking on routers without it.
+- **Timeouts, upstreams, streaming and WebSockets** are Traefik's then; `timeouts` and `upstreams`
+  in the configuration file apply to the proxy only.
 
 ## Writes only from people
 

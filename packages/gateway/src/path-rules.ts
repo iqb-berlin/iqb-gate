@@ -14,9 +14,10 @@ export interface PathRule {
   off?: boolean;
 }
 
-/** A request that is checked: under which rule, and its path as it arrived (without the query). */
+/** A request that is checked: under which rule, its method, and its path as it arrived (without the query). */
 export interface CheckedRequest {
   rule: string;
+  method: string;
   path: string;
 }
 

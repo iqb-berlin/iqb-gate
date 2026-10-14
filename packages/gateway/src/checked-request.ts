@@ -83,5 +83,5 @@ export function checkedRequest(
   if (!rule) return null;
   const token = bearerToken(request.authorization);
   if (scope.exempt.some(exemption => isExempt(exemption, request.method, paths, token))) return null;
-  return { rule: rule.name, path: paths.raw };
+  return { rule: rule.name, method: request.method, path: paths.raw };
 }

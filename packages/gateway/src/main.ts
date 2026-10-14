@@ -1,6 +1,7 @@
 import { ConfigError, parseConfig, type GatewayEnv } from './config.js';
 import { readConfigFile } from './config-file.js';
 import { buildGateway } from './gateway.js';
+import { FORWARD_AUTH_PATH } from './forward-auth-route.js';
 
 /**
  * How long a stop waits for open requests -- uploads, event streams, WebSockets -- before cutting
@@ -26,7 +27,8 @@ async function main(): Promise<void> {
   process.once('SIGINT', () => close('SIGINT'));
 
   await gateway.listen({ host: config.host, port: config.port });
-  gateway.log.info(`forwarding to ${config.upstream}`);
+  if (config.forwardAuth) gateway.log.info(`answering Traefik's ForwardAuth at ${FORWARD_AUTH_PATH}`);
+  if (config.upstream) gateway.log.info(`forwarding to ${config.upstream}`);
 }
 
 main().catch((error: unknown) => {

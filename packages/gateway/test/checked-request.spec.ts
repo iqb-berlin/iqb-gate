@@ -25,7 +25,7 @@ describe('checkedRequest for writes', () => {
   it('hands back the path as it arrived, without the query', () => {
     const request = { method: 'PATCH', url: '/api/%61dmin/users?x=1', authorization: undefined };
     expect(checkedRequest(SAVING_METHODS, WRITES, request))
-      .toEqual({ rule: 'administration', path: '/api/%61dmin/users' });
+      .toEqual({ rule: 'administration', method: 'PATCH', path: '/api/%61dmin/users' });
   });
 
   it('checks a write under a rule and names the rule', () => {
@@ -137,7 +137,7 @@ describe('checkedRequest for reads', () => {
   it('checks a read under a rule, and hands back the path as it arrived without the query', () => {
     const request = { method: 'GET', url: '/api/workspaces/5/units?x=1', authorization: undefined };
     expect(checkedRequest(READING_METHODS, READS, request))
-      .toEqual({ rule: 'workspace', path: '/api/workspaces/5/units' });
+      .toEqual({ rule: 'workspace', method: 'GET', path: '/api/workspaces/5/units' });
     expect(checkRead('HEAD', '/api/admin/users')).toBe('administration');
     expect(checkRead('GET', '/api/my-data')).toBe('other');
   });

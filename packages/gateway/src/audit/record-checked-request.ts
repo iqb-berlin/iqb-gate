@@ -22,9 +22,11 @@ export interface AuditContext {
 
 /**
  * Writes the audit entry of a checked request once its answer is final -- whether the application
- * answered, failed, or the gateway rejected it, and also when the client left before (499). The
- * person is named from the token alongside the request, so that the request does not wait for the
- * provider's keys; the entry keeps the time the answer was final.
+ * answered, failed, or the gateway rejected it, and also when the client left before (499). Under
+ * Traefik's ForwardAuth the gateway does not see the application's answer: the status is then its
+ * own, 200 for a request it let through. The person is named from the token alongside the request,
+ * so that the request does not wait for the provider's keys; the entry keeps the time the answer
+ * was final.
  */
 export function recordWhenAnswered(
   request: FastifyRequest,
@@ -43,7 +45,7 @@ export function recordWhenAnswered(
       sessionId: checked.presentedSession,
       user,
       userVerified,
-      method: request.method,
+      method: checked.method,
       path: checked.path,
       rule: checked.rule,
       statusCode,

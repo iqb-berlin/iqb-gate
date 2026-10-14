@@ -11,6 +11,7 @@ describe('parseConfig', () => {
   it('fills in the defaults around the upstream', () => {
     expect(parseConfig(UPSTREAM)).toEqual({
       upstream: 'http://frontend:8080',
+      forwardAuth: false,
       upstreams: [],
       host: '0.0.0.0',
       port: 8080,
@@ -72,9 +73,28 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_AUDIT_KEY: 'short' })).toThrow(/at least 32/);
   });
 
-  it('requires the upstream', () => {
+  it('requires the upstream, unless the gateway only answers Traefik\'s ForwardAuth', () => {
     expect(() => parseConfig({})).toThrow(ConfigError);
     expect(() => parseConfig({})).toThrow(/IQB_GATE_UPSTREAM is required/);
+    const forwardAuthOnly = parseConfig({ IQB_GATE_FORWARD_AUTH: 'on' });
+    expect(forwardAuthOnly.upstream).toBeUndefined();
+    expect(forwardAuthOnly.forwardAuth).toBe(true);
+  });
+
+  it('switches the ForwardAuth on only when asked, alone or beside the proxy', () => {
+    expect(parseConfig(UPSTREAM).forwardAuth).toBe(false);
+    expect(parseConfig({ ...UPSTREAM, IQB_GATE_FORWARD_AUTH: 'ON' }).forwardAuth).toBe(true);
+    expect(() => parseConfig({ ...UPSTREAM, IQB_GATE_FORWARD_AUTH: 'yes' }))
+      .toThrow(/IQB_GATE_FORWARD_AUTH is on or off/);
+  });
+
+  it('refuses upstreams and timeouts without the proxy they apply to', () => {
+    const forwardAuthOnly = { IQB_GATE_FORWARD_AUTH: 'on' };
+    const upstreams = 'upstreams:\n  - { prefix: /api/, upstream: "http://backend:3333/" }\n';
+    expect(() => parseConfig(forwardAuthOnly, upstreams)).toThrow(/upstreams need IQB_GATE_UPSTREAM/);
+    expect(() => parseConfig(forwardAuthOnly, 'timeouts:\n  default: 60\n')).toThrow(/timeouts need IQB_GATE_UPSTREAM/);
+    // An empty section asks nothing of the proxy
+    expect(parseConfig(forwardAuthOnly, 'upstreams: []\ntimeouts:\n').upstream).toBeUndefined();
   });
 
   it('accepts only an http(s) origin as upstream', () => {

@@ -4,6 +4,8 @@
 
 # Path prefixes with an upstream of their own; everything else goes to IQB_GATE_UPSTREAM, and so
 # do WebSockets. studio-lite: the API straight to the backend, as Traefik routed it before.
+# upstreams and timeouts are the proxy's: behind Traefik's ForwardAuth, without IQB_GATE_UPSTREAM,
+# they stop the gateway at start, as there is nothing they could apply to.
 upstreams:
   - { prefix: /api, upstream: 'http://backend:3333' }
 

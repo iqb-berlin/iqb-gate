@@ -17,6 +17,8 @@ import { installGates } from './install-gates.js';
 import { installPageGate } from './page-gate/install-page-gate.js';
 import { deriveSecret } from './proof-of-work.js';
 import { inTurn } from './gate-pre-handler.js';
+import { proxiedTarget } from './check-target.js';
+import { forwardAuthRoute } from './forward-auth-route.js';
 
 export { GATE_PREFIX };
 
@@ -60,16 +62,18 @@ function replyUpstreamError(reply: FastifyReply<RouteGenericInterface, RawServer
 }
 
 /**
- * The gateway: a reverse proxy in front of one app -- its upstream, and for path prefixes of their own
- * an upstream each (the API, say, straight to the backend). It streams request and response bodies
- * without buffering or limiting them (uploads of several gigabytes, server-sent events), passes
- * WebSockets through, and gives the upstream a timeout per path prefix -- the time it may stay
- * silent, as nginx's `proxy_read_timeout`, not a limit on the whole transfer. What the upstream
- * answers, the client gets: no retries, no limit on parallel connections.
+ * The gateway, in one of two ways or both. Behind Traefik it answers its ForwardAuth
+ * (`forwardAuthRoute`, with `IQB_GATE_FORWARD_AUTH=on`): Traefik asks about each request and streams
+ * it to the application itself. With an upstream it is a reverse proxy in front of one app -- its
+ * upstream, and for path prefixes of their own an upstream each (the API, say, straight to the
+ * backend). The proxy streams request and response bodies without buffering or limiting them
+ * (uploads of several gigabytes, server-sent events), passes WebSockets through, and gives the
+ * upstream a timeout per path prefix -- the time it may stay silent, as nginx's
+ * `proxy_read_timeout`, not a limit on the whole transfer. What the upstream answers, the client
+ * gets: no retries, no limit on parallel connections.
  *
- * The protections hang into this proxy as checks before a request is passed on: the page gate for
- * pages opened in a browser (`installPageGate`), the write and read gates for API requests
- * (`installGates`).
+ * The protections are the same checks either way: the page gate for pages opened in a browser
+ * (`installPageGate`), the write and read gates for API requests (`installGates`).
  */
 export async function buildGateway(
   config: GatewayConfig,
@@ -93,6 +97,18 @@ export async function buildGateway(
   await gateway.register(fastifyCookie, { secret: deriveSecret(config.secret, 'session-cookie'), hook: false });
   const pageGate = installPageGate(gateway, config);
   const checks = [...(pageGate ? [pageGate] : []), ...installGates(gateway, config)];
+  const evaluate = inTurn(checks);
+  if (config.forwardAuth) {
+    await gateway.register(forwardAuthRoute(evaluate));
+    // Not refused: IQB_GATE_ENFORCE=off does this on purpose, for test runs
+    if (!checks.length) gateway.log.warn('ForwardAuth with nothing to check: every request is let through');
+  }
+  if (!config.upstream) return gateway;
+  const { upstream } = config;
+  // A hook that answered returns the reply, as Fastify asks, so that the request goes no further
+  const checkProxied = async (request: FastifyRequest, reply: FastifyReply) => (
+    await evaluate(request, reply, proxiedTarget(request)) ? reply : undefined
+  );
 
   // Documented by the plugin, but missing from its typings -- hence declared here, not inline.
   const wsClientOptions: ClientOptions & {
@@ -116,7 +132,7 @@ export async function buildGateway(
       ...options,
       timeout: timeoutSecondsFor(request.url, config.timeouts) * 1000
     }),
-    ...(checks.length ? { preHandler: inTurn(checks) } : {})
+    ...(checks.length ? { preHandler: checkProxied } : {})
   };
 
   // A prefix of its own takes its requests away from the upstream at /, which keeps the WebSockets:
@@ -129,7 +145,7 @@ export async function buildGateway(
   })));
   await gateway.register(httpProxy, {
     ...proxyOptions,
-    upstream: config.upstream,
+    upstream,
     websocket: true,
     wsClientOptions
   });

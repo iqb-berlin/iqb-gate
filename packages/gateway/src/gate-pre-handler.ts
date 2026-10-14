@@ -1,15 +1,22 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CLIENT_SIGNALS_HEADER } from '@iqb/gate-protocol';
 import type { CheckedRequest } from './path-rules.js';
+import type { CheckTarget } from './check-target.js';
 import { readSession, startSession } from './session/gate-session.js';
 import { type GateAssessment, type Requester, rejectionOf } from './session/gate-assessment.js';
 import { type AuditContext, recordWhenAnswered } from './audit/record-checked-request.js';
 
 /**
- * A check that runs before a request is passed upstream: it answers the request itself and
- * returns the reply, or returns nothing and lets it pass.
+ * A check that runs before a request is passed on -- by the proxy, or by Traefik once the gateway
+ * answered its ForwardAuth: it answers the request itself and returns `true`, or returns `false` and
+ * lets it pass. It decides on `target`, the request it is asked about. Not the reply: a Fastify reply
+ * is thenable, so a promise of it settles only once the answer is sent -- and then as `undefined`.
  */
-export type GatePreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply | undefined>;
+export type GatePreHandler = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  target: CheckTarget
+) => Promise<boolean>;
 
 /** A gate as its pre-handler sees it: which requests it checks, and how it decides one. */
 export interface Gate {
@@ -31,28 +38,29 @@ export interface Gate {
  * can be counted for it. Everything else passes untouched. The body is not read.
  */
 export function gatePreHandler(gate: Gate, context: AuditContext): GatePreHandler {
-  return async (request, reply) => {
+  return async (request, reply, target) => {
     const checked = gate.check({
-      method: request.method, url: request.url, authorization: request.headers.authorization
+      method: target.method, url: target.url, authorization: request.headers.authorization
     });
-    if (!checked) return undefined;
+    if (!checked) return false;
 
     const presentedSession = readSession(request);
-    const sessionId = presentedSession ?? startSession(request, reply);
+    const sessionId = presentedSession ?? startSession(reply, target.protocol === 'https');
     const assessment = gate.assess({ sessionId, signalsHeader: request.headers[CLIENT_SIGNALS_HEADER] });
     const body = rejectionOf(assessment);
     if (body || gate.recordsAllowed) {
       recordWhenAnswered(request, reply, { ...checked, presentedSession, assessment }, context);
     }
-    // Returning the reply ends the request here; returning nothing passes it on
-    return body ? reply.code(body.statusCode).send(body) : undefined;
+    if (!body) return false;
+    reply.code(body.statusCode).send(body);
+    return true;
   };
 }
 
 /** The checks one after the other, until one of them answers. */
 export function inTurn(checks: GatePreHandler[]): GatePreHandler {
-  return (request, reply) => checks.reduce<Promise<FastifyReply | undefined>>(
-    async (earlier, check) => (await earlier) ?? check(request, reply),
-    Promise.resolve(undefined)
+  return (request, reply, target) => checks.reduce<Promise<boolean>>(
+    async (earlier, check) => (await earlier) || check(request, reply, target),
+    Promise.resolve(false)
   );
 }

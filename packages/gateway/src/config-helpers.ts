@@ -55,11 +55,16 @@ export function positiveIntegerAt(value: unknown, fallback: number, where: strin
   return number;
 }
 
+/** A setting that is `on` or `off`, `fallback` when it is not given; `name` names it in the error. */
+export function parseSwitch(value: string | undefined, name: string, fallback: 'on' | 'off'): boolean {
+  const setting = value?.trim().toLowerCase() || fallback;
+  if (setting !== 'on' && setting !== 'off') throw new ConfigError(`${name} is on or off, not ${value}.`);
+  return setting === 'on';
+}
+
 /** `IQB_GATE_ENFORCE`: `on` (the default) or `off`, which switches every check off. */
 export function parseEnforce(value: string | undefined): boolean {
-  const setting = value?.trim().toLowerCase() || 'on';
-  if (setting !== 'on' && setting !== 'off') throw new ConfigError(`IQB_GATE_ENFORCE is on or off, not ${value}.`);
-  return setting === 'on';
+  return parseSwitch(value, 'IQB_GATE_ENFORCE', 'on');
 }
 
 /** How many requests a session may make within a window (`writeGate.burst`, `readGate.limit`). */

@@ -14,6 +14,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compilePattern } from '../src/config-helpers.js';
+import { DEFAULT_PAGE_TEXTS } from '../src/page-gate/page-texts.js';
+import { Writable } from 'node:stream';
 import { testConfig } from './support/test-config.js';
 import { FakeProvider, foreignToken } from '@iqb/gate-oidc/testing';
 import { STREAM_BODY } from './support/stream-body.js';
@@ -135,6 +137,45 @@ describe('the write gate', () => {
   it('never checks a read, nor a write outside the rules', async () => {
     expect((await fetch(`${base}/api/admin/users`)).status).toBe(201);
     expect((await fetch(`${base}/api/login`, { method: 'POST', body: '{}' })).status).toBe(201);
+  });
+
+  it('leaves a write the page policy kept out alone: no gate checks it after the answer', async () => {
+    // The checks run in turn until one answers. A check that answered used to hand back the reply,
+    // which a promise settles only once it is sent -- and then as undefined: the write gate ran on
+    // and sent its own answer on top of the page policy's.
+    const warnings: string[] = [];
+    const logged = new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        warnings.push(chunk.toString());
+        done();
+      }
+    });
+    const crawlerGateway = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
+      trustProxy: ['127.0.0.1'],
+      writeGate: {
+        enforce: true, burst: { limit: 30, windowSeconds: 60 }, userClaim: undefined, ...STUDIO_LITE_RULES
+      },
+      pageGate: {
+        enabled: true,
+        passDays: 7,
+        challengesPerAddressAndMinute: 120,
+        texts: DEFAULT_PAGE_TEXTS,
+        policy: [{ name: 'ai-crawlers', userAgent: compilePattern('GPTBot', 'test'), action: 'deny' }]
+      }
+    }), { level: 'warn', stream: logged });
+    try {
+      const hits = upstreamHits.length;
+      const response = await crawlerGateway.inject({
+        method: 'PATCH', url: '/api/admin/users/3', headers: { 'user-agent': 'GPTBot/1.0' }, payload: '{}'
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual(expect.objectContaining({ message: 'This client is not allowed here.' }));
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(upstreamHits.length).toBe(hits);
+      expect(warnings.join('')).not.toMatch(/already sent/i);
+    } finally {
+      await crawlerGateway.close();
+    }
   });
 
   it('rejects a write without the browser\'s report as automated, before it reaches the application', async () => {

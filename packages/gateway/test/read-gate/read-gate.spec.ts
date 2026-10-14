@@ -24,7 +24,7 @@ describe('ReadGate', () => {
   it('should check reads under its rules, and write only those it refuses to the audit log', () => {
     const gate = gateWith();
     const request = (method: string) => ({ method, url: '/api/x', authorization: undefined });
-    expect(gate.check(request('GET'))).toEqual({ rule: 'other', path: '/api/x' });
+    expect(gate.check(request('GET'))).toEqual({ rule: 'other', method: 'GET', path: '/api/x' });
     expect(gate.check(request('HEAD'))?.rule).toBe('other');
     expect(gate.check(request('POST'))).toBeNull();
     expect(gate.recordsAllowed).toBe(false);

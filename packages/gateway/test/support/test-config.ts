@@ -2,9 +2,10 @@ import type { GatewayConfig } from '../../src/config.js';
 import { DEFAULT_PAGE_TEXTS } from '../../src/page-gate/page-texts.js';
 
 /** A gateway configuration for tests: no checked writes or reads, the audit log in memory. */
-export function testConfig(upstream: string, changes: Partial<GatewayConfig> = {}): GatewayConfig {
+export function testConfig(upstream: string | undefined, changes: Partial<GatewayConfig> = {}): GatewayConfig {
   return {
     upstream,
+    forwardAuth: false,
     upstreams: [],
     host: '127.0.0.1',
     port: 0,

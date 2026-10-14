@@ -25,11 +25,11 @@ export function readSession(request: FastifyRequest): string | null {
 
 /**
  * Starts a session: a random id in a signed cookie that lives as long as the browser session. Not
- * readable by scripts, and sent along with requests from the same site only.
+ * readable by scripts, and sent along with requests from the same site only. `secure` when the
+ * client came over HTTPS -- under ForwardAuth that is Traefik's word, not the subrequest's protocol.
  */
-export function startSession(request: FastifyRequest, reply: FastifyReply): string {
+export function startSession(reply: FastifyReply, secure: boolean): string {
   const id = randomBytes(18).toString('base64url');
-  const secure = request.protocol === 'https';
   reply.setCookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, id, {
     signed: true,
     httpOnly: true,

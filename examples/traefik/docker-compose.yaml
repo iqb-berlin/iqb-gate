@@ -1,0 +1,47 @@
+# LOCAL ONLY: the gateway as Traefik's ForwardAuth in front of traefik/whoami, which answers every
+# request with what it received. Traefik's own self-signed certificate on https://localhost:8443.
+# For a server, see the main README, "Behind Traefik".
+services:
+  traefik:
+    image: traefik:v3.6
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.websecure.address=:8443
+      - --entrypoints.websecure.http.tls=true
+      - --log.level=INFO
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      # Rootless Docker: DOCKER_SOCKET=/run/user/$(id -u)/docker.sock
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+
+  iqb-gate:
+    # docker build -f packages/gateway/Dockerfile -t iqb-gate:local .   (in the repository root)
+    image: ${IQB_GATE_IMAGE:-iqb-gate:local}
+    environment:
+      # ForwardAuth only: no IQB_GATE_UPSTREAM, no proxy
+      IQB_GATE_FORWARD_AUTH: "on"
+      IQB_GATE_CONFIG: /etc/iqb-gate/gate.yaml
+      # Traefik, on the network compose creates
+      IQB_GATE_TRUST_PROXY: 172.16.0.0/12,192.168.0.0/16
+      IQB_GATE_SECRET: ${IQB_GATE_SECRET:?set IQB_GATE_SECRET, e.g. $(openssl rand -hex 32)}
+      IQB_GATE_AUDIT_KEY: ${IQB_GATE_AUDIT_KEY:?set IQB_GATE_AUDIT_KEY, e.g. $(openssl rand -hex 32)}
+    volumes:
+      - ./gate.yaml:/etc/iqb-gate/gate.yaml:ro
+    labels:
+      - "traefik.enable=true"
+      # The gateway's own paths, straight to it -- but not the auth path, which only Traefik asks
+      - "traefik.http.routers.iqb-gate.rule=PathPrefix(`/.iqb-gate`) && !Path(`/.iqb-gate/auth`)"
+      - "traefik.http.routers.iqb-gate.entrypoints=websecure"
+      - "traefik.http.services.iqb-gate.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.iqb-gate-auth.forwardauth.address=http://iqb-gate:8080/.iqb-gate/auth"
+      - "traefik.http.middlewares.iqb-gate-auth.forwardauth.trustForwardHeader=false"
+
+  app:
+    image: traefik/whoami:v1.10.1
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.middlewares=iqb-gate-auth"

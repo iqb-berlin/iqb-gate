@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { parse } from 'yaml';
 import { GATE_PREFIX } from '@iqb/gate-protocol';
 import {
-  ConfigError, firstDuplicate, isMapping, isPositiveInteger, listAt, positiveIntegerAt, rejectUnknownKeys
+  ConfigError, firstDuplicate, isMapping, isPositiveInteger, listAt, parseSwitch, positiveIntegerAt, rejectUnknownKeys
 } from './config-helpers.js';
 import { parseWriteGate, type WriteGateConfig } from './write-gate/write-gate-config.js';
 import { parseReadGate, type ReadGateConfig } from './read-gate/read-gate-config.js';
@@ -34,8 +34,13 @@ export interface AuditConfig {
 }
 
 export interface GatewayConfig {
-  /** Where every request that is not the gateway's own goes, e.g. `http://frontend:8080`. */
-  upstream: string;
+  /**
+   * Where every request that is not the gateway's own goes, e.g. `http://frontend:8080`. Only with
+   * `forwardAuth` may it be missing: then there is no proxy.
+   */
+  upstream: string | undefined;
+  /** Whether the gateway answers Traefik's ForwardAuth at `/.iqb-gate/auth` (`IQB_GATE_FORWARD_AUTH`). */
+  forwardAuth: boolean;
   /** Path prefixes with an upstream of their own; WebSockets below them still go to `upstream`. */
   upstreams: PathUpstream[];
   host: string;
@@ -65,7 +70,7 @@ export interface GatewayConfig {
 export type GatewayEnv = Partial<Record<
   'IQB_GATE_UPSTREAM' | 'IQB_GATE_HOST' | 'IQB_GATE_PORT' | 'IQB_GATE_TRUST_PROXY' | 'IQB_GATE_CONFIG' |
   'IQB_GATE_ENFORCE' | 'IQB_GATE_SECRET' | 'IQB_GATE_AUDIT_FILE' | 'IQB_GATE_AUDIT_RETENTION_DAYS' |
-  'IQB_GATE_AUDIT_KEY' | 'IQB_GATE_RULES_OFF' | 'IQB_GATE_READ_RULES_OFF',
+  'IQB_GATE_AUDIT_KEY' | 'IQB_GATE_RULES_OFF' | 'IQB_GATE_READ_RULES_OFF' | 'IQB_GATE_FORWARD_AUTH',
   string
 >>;
 
@@ -94,9 +99,8 @@ function parseOrigin(value: string, where: string): string {
   return url.origin;
 }
 
-function parseUpstream(value: string | undefined): string {
-  if (!value) throw new ConfigError('IQB_GATE_UPSTREAM is required, e.g. http://frontend:8080.');
-  return parseOrigin(value, 'IQB_GATE_UPSTREAM');
+function parseUpstream(value: string | undefined): string | undefined {
+  return value ? parseOrigin(value, 'IQB_GATE_UPSTREAM') : undefined;
 }
 
 function parsePort(value: string | undefined): number {
@@ -242,6 +246,13 @@ function parseAuditKey(value: string | undefined): string | undefined {
   return value;
 }
 
+/** Whether a section of the file says anything: not missing, empty or null. */
+function isSet(section: unknown): boolean {
+  if (section === undefined || section === null) return false;
+  if (Array.isArray(section)) return section.length > 0;
+  return !isMapping(section) || Object.keys(section).length > 0;
+}
+
 /**
  * Builds the gateway's configuration from the environment and the text of the file that
  * `IQB_GATE_CONFIG` names (read by the caller). Throws a {@link ConfigError} saying what is wrong.
@@ -258,8 +269,22 @@ export function parseConfig(env: GatewayEnv, configFileText?: string): GatewayCo
     throw new ConfigError('pageGate needs IQB_GATE_TRUST_PROXY: it checks HTTPS requests only, and the gateway '
       + 'learns that a request came over HTTPS from the proxy in front that ends TLS.');
   }
+  const forwardAuth = parseSwitch(env.IQB_GATE_FORWARD_AUTH, 'IQB_GATE_FORWARD_AUTH', 'off');
+  const upstream = parseUpstream(env.IQB_GATE_UPSTREAM);
+  // Missing by mistake, it would leave a proxy that answers every request with 404 -- and a healthy check
+  if (!upstream && !forwardAuth) {
+    throw new ConfigError('IQB_GATE_UPSTREAM is required, e.g. http://frontend:8080 -- unless the gateway only '
+      + 'answers Traefik\'s ForwardAuth (IQB_GATE_FORWARD_AUTH=on).');
+  }
+  // An empty section asks nothing of the proxy
+  const proxyOnly = ['upstreams', 'timeouts'].filter(key => isSet(file[key]));
+  if (!upstream && proxyOnly.length) {
+    throw new ConfigError(`${proxyOnly.join(' and ')} need IQB_GATE_UPSTREAM: behind Traefik's ForwardAuth `
+      + 'there is no proxy they could apply to.');
+  }
   return {
-    upstream: parseUpstream(env.IQB_GATE_UPSTREAM),
+    upstream,
+    forwardAuth,
     upstreams: parseUpstreams(file.upstreams),
     host: env.IQB_GATE_HOST || '0.0.0.0',
     port: parsePort(env.IQB_GATE_PORT),

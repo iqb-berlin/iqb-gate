@@ -1,0 +1,12 @@
+# LOCAL DEMO ONLY. The gates of the Traefik example: saving notes and reading the secret come from a
+# person only, and a page opened in a browser asks for the work first.
+writeGate:
+  rules:
+    - { name: notes, path: '^/api/notes' }
+readGate:
+  rules:
+    - { name: secret, path: '^/api/secret' }
+pageGate:
+  enabled: true
+  policy:
+    - { name: ai-crawlers, userAgent: '(GPTBot|CCBot|ClaudeBot)', action: deny }

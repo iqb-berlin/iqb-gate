@@ -26,12 +26,59 @@ listed (TypeORM, GitHub pull requests, board and tickets) does not apply.
 ### Before the Commit: A Review
 - **Rule**: Finish the change and verify it (`npm run lint`, `npm run typecheck`, `npm test`,
   `npm run build`, `npm run build:examples`), but do not commit yet. Run `/code-review` first; once
-  the change is committed, name the scope (`/code-review <from>..HEAD`).
+  the change is committed, name the scope (`/code-review <from>...HEAD`).
+- **Exception**: the version commit of a release (`npm run version:set`) is committed without a
+  review of its own; the publish review covers it (*Before a Publish*).
 - **Rule**: After the review, check `git status`: review agents can leave files of their own.
 
+### Before a Push: Lint and a Review
+- **Rule**: `npm run lint` passes on what is pushed: with the pushed commit checked out and a
+  clean working tree (`git status`), before the review -- the review should not spend itself on
+  what lint finds. The review's ranges below end at that commit, not at HEAD when it differs.
+- **Rule**: Nothing is pushed before a `/code-review` of the commits the remote does not have yet,
+  even when each of them was reviewed before its commit. Run `git fetch` first, then:
+  - a branch with an upstream: `/code-review @{upstream}...HEAD`;
+  - a new branch: `/code-review origin/main...HEAD`, from where it leaves the remote's main branch;
+  - the first push of the repository: the whole repository -- packages, `scripts/`, `examples/`,
+    `.github/` and the root files -- in parts if it is large.
+- **Rule**: A tag sends its commit and every ancestor the remote lacks: a push of tags is reviewed
+  like a push of the branch they stand on, unless the remote has those commits already.
+- **Rule**: A rebase or merge makes commits the review has not seen: after one, lint and review
+  again. What the review finds is fixed under *Before the Commit: A Review* before the push.
+  When asking the person you work for to approve the push, name the review's range.
+
+### Before a Publish: Lint and a Review
+- **Rule**: `npm run lint` passes on what is published: at HEAD, with a clean working tree
+  (`git status`), before the review. `npm run publish:npm` lints again in `publish:check`; that
+  does not take the place of this run.
+- **Rule**: Nothing is published -- to npm (`npm run publish:npm`) or as a Docker image -- before
+  a `/code-review` of everything it ships that was not published before:
+  `/code-review <tag>...HEAD`.
+  - `<tag>` is the tag of the last publish of the same kind: `v<version>` for the npm packages,
+    `gateway-v<version>` for the image. Before the first publish there is none: the shipped paths
+    are reviewed as a whole.
+  - What is shipped:
+    - for npm, `packages/protocol`, `oidc`, `nest` and `angular`, with what builds and publishes
+      them: the root `package.json`, `package-lock.json`, `tsconfig.base.json` and `scripts/`;
+    - for the image, `packages/protocol`, `oidc` and `gateway`, with the root `package.json`,
+      `package-lock.json`, `tsconfig.base.json` and `.dockerignore`.
+  - A large range may be reviewed one package at a time, but each pass follows the changed
+    members to their callers in the other shipped packages: they are published together.
+- **Rule**: The review runs on the committed release, after `npm run version:set` and its commit.
+  What it finds is fixed under *Before the Commit: A Review*, and lint and the review run again;
+  only then come `npm run publish:dry-run` and the publish.
+  - The image carries the version of the packages. A release of the image alone runs `version:set`
+    too, and that version is not published to npm afterwards from another commit.
+  - The image is built from that commit with nothing beside it (`git status --ignored`):
+    `docker build` takes the files as they lie, ignored ones included, not as they are committed.
+- **Rule**: When asking the person you work for to approve the publish, name the review's range.
+  Once published, tag the published commit (`v<version>`, `gateway-v<version>`), so that the next
+  review knows where to start.
+
 ### Local Only
-- **Rule**: This repository has no remote. Do not add one, push, create a GitHub repository, or
-  publish to npm or Docker Hub, unless asked to in so many words.
+- **Rule**: This repository has no remote unless one is added on request. Do not add one, push,
+  create a GitHub repository, or publish to npm or Docker Hub, unless asked to in so many words --
+  and push or publish only after lint and the reviews above.
 
 ## The Packages
 

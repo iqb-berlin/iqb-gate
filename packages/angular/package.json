@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "description": "The browser half of iqb-gate for Angular applications: client signals with every write, the ALTCHA challenge when the gateway asks for it",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "prepublishOnly": "node -e \"console.error('Publish packages/angular/dist, not the source: npm run publish:npm'); process.exit(1)\"",
     "build": "ng-packagr -p ng-package.json -c tsconfig.lib.json",
     "test": "jest",
     "typecheck": "tsc -p tsconfig.lib.json --noEmit && tsc -p tsconfig.spec.json --noEmit"

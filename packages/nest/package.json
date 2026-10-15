@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "Checks OpenID Connect Bearer tokens in NestJS backends: a module, a guard, a parameter decorator",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

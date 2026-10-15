@@ -54,5 +54,10 @@ export default tseslint.config(
       }
     },
     rules: { '@typescript-eslint/no-require-imports': 'off' }
+  },
+  {
+    // The release scripts of the root: version:set, publish:npm
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly' } }
   }
 );

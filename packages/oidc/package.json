@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "Checks OpenID Connect access tokens against the provider's keys, for the iqb-gate gateway and NestJS backends",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

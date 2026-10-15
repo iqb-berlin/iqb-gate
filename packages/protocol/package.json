@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "What the iqb-gate gateway and its client libraries agree on: headers, paths, status codes, types",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

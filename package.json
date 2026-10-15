@@ -20,10 +20,15 @@
     "build": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular",
     "lint": "eslint .",
     "pretest": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc",
-    "test": "npm test -w @iqb/gate-protocol -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular",
+    "test": "npm test -w @iqb/gate-protocol -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular && npm run test:scripts",
+    "test:scripts": "node --test \"scripts/test/*.spec.mjs\"",
     "pretypecheck": "npm run build -w @iqb/gate-protocol -w @iqb/gate-oidc",
     "typecheck": "npm run typecheck -w @iqb/gate-protocol -w @iqb/gate-oidc -w @iqb/gate-gateway -w @iqb/gate-nest -w @iqb/gate-angular",
-    "build:examples": "npm run build -w iqb-gate-demo-api -w iqb-gate-demo"
+    "build:examples": "npm run build -w iqb-gate-demo-api -w iqb-gate-demo",
+    "version:set": "node scripts/set-version.mjs",
+    "publish:check": "npm run lint && npm run typecheck && npm test && npm run build && npm run build:examples",
+    "publish:dry-run": "npm run publish:check && node scripts/publish.mjs --dry-run",
+    "publish:npm": "node scripts/publish.mjs --check && npm run publish:check && node scripts/publish.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

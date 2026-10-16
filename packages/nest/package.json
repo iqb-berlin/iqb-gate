@@ -15,6 +15,7 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "prebuild": "node ../../scripts/clean-dist.mjs",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run && npm run build && node test/dist-smoke.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"

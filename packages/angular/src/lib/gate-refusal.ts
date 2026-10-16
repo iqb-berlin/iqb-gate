@@ -30,14 +30,17 @@ export function isVerificationRequired(error: unknown): boolean {
 }
 
 /**
- * The header names the refusal whatever the body is (none for HEAD, a Blob for a download); the
- * body alone names it from a gateway before the header.
+ * A JSON answer names the refusal in its body, and only there: behind ForwardAuth the
+ * application's own answers bypass the gateway, which cannot drop a header they carry. The header
+ * names it for an answer whose body cannot be read -- none for HEAD, a Blob, text or an
+ * ArrayBuffer for a download.
  */
 function isGateAnswer(error: unknown, status: number, code: string): boolean {
   if (!(error instanceof HttpErrorResponse) || error.status !== status) return false;
-  if (error.headers.get(GATE_REFUSAL_HEADER) === code) return true;
   const body: unknown = error.error;
-  return typeof body === 'object' && body !== null && (body as { code?: unknown }).code === code;
+  const json = typeof body === 'object' && body !== null && !(body instanceof Blob) && !(body instanceof ArrayBuffer);
+  if (json) return (body as { code?: unknown }).code === code;
+  return error.headers.get(GATE_REFUSAL_HEADER) === code;
 }
 
 /** Why the gateway refused the request of `error`, or `null` for any other error. */

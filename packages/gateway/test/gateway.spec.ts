@@ -65,6 +65,12 @@ function startUpstream(): Promise<Server> {
       response.end('late');
       return;
     }
+    if (url === '/conditional') {
+      // The application's own 428, with a header only the gateway may send
+      response.writeHead(428, { 'x-iqb-gate-refusal': 'human-verification-required', 'x-upstream': 'stub' });
+      response.end('{"message":"If-Match missing"}');
+      return;
+    }
     if (url === '/unavailable') {
       response.writeHead(503, { 'retry-after': '1' });
       response.end('down for maintenance');
@@ -168,6 +174,14 @@ describe('gateway', () => {
     expect(headers['x-forwarded-for']).toBe('127.0.0.1');
     expect(headers['x-forwarded-proto']).toBe('http');
     expect(headers['x-forwarded-host']).toBe(new URL(base).host);
+  });
+
+  // Otherwise the browser library would take the application's own 428 for the gateway's
+  it('drops the gateway\'s own headers from the upstream\'s answers as well', async () => {
+    const response = await fetch(`${base}/conditional`);
+    expect(response.status).toBe(428);
+    expect(response.headers.get('x-iqb-gate-refusal')).toBeNull();
+    expect(response.headers.get('x-upstream')).toBe('stub');
   });
 
   it('passes a 503 of the upstream on as it is, without trying again', async () => {

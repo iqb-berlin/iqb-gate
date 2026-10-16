@@ -1,7 +1,20 @@
 import type { IncomingHttpHeaders } from 'node:http';
 
-/** Headers only the gateway may set; whatever a client sends under this prefix is dropped. */
+/**
+ * Headers only the gateway may set; whatever a client sends under this prefix is dropped, and so
+ * is what the application answers with under it.
+ */
 export const RESERVED_HEADER_PREFIX = 'x-iqb-gate-';
+
+/**
+ * Headers without the reserved ones -- for the application's answers, so that the browser library
+ * takes no answer of the application for one of the gateway's (`x-iqb-gate-refusal`).
+ */
+export function withoutReservedHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders {
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !name.toLowerCase().startsWith(RESERVED_HEADER_PREFIX))
+  ) as IncomingHttpHeaders;
+}
 
 /**
  * Other ways a client could claim an origin of its own. The gateway states the origin in
@@ -32,10 +45,8 @@ export interface ForwardedRequest {
  */
 export function forwardedHeaders(headers: IncomingHttpHeaders, request: ForwardedRequest): IncomingHttpHeaders {
   const kept = Object.fromEntries(
-    Object.entries(headers).filter(([name]) => {
-      const lower = name.toLowerCase();
-      return !lower.startsWith(RESERVED_HEADER_PREFIX) && !CLAIMED_ORIGIN_HEADERS.includes(lower);
-    })
+    Object.entries(withoutReservedHeaders(headers))
+      .filter(([name]) => !CLAIMED_ORIGIN_HEADERS.includes(name.toLowerCase()))
   ) as IncomingHttpHeaders;
   const chain = request.chain.filter(address => address !== '');
   return {

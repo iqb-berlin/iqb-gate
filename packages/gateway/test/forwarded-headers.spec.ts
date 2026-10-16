@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forwardedHeaders } from '../src/forwarded-headers.js';
+import { forwardedHeaders, withoutReservedHeaders } from '../src/forwarded-headers.js';
 
 const REQUEST = { chain: ['203.0.113.7'], protocol: 'https', host: 'studio.example.org' };
 
@@ -50,5 +50,16 @@ describe('forwardedHeaders', () => {
   it('leaves out what it does not know', () => {
     const headers = forwardedHeaders({}, { chain: [''], protocol: 'http', host: undefined });
     expect(headers).toEqual({ 'x-forwarded-proto': 'http' });
+  });
+});
+
+describe('withoutReservedHeaders', () => {
+  it('drops the headers only the gateway may set, whatever their case, and keeps the rest', () => {
+    expect(withoutReservedHeaders({
+      'x-iqb-gate-refusal': 'human-verification-required',
+      'X-Iqb-Gate-Other': 'x',
+      'content-type': 'application/json',
+      'x-upstream': 'stub'
+    })).toEqual({ 'content-type': 'application/json', 'x-upstream': 'stub' });
   });
 });

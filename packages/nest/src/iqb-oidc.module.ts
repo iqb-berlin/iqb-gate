@@ -10,7 +10,7 @@ import { OidcAuthGuard } from './oidc-auth.guard.js';
  * (optional; without it, the guard puts only the identity on the request). What the module hears
  * about refused tokens goes to its own log.
  */
-export interface IqbOidcSettings extends Omit<OidcVerifierOptions, 'onRejected' | 'onUnavailable'> {
+export interface IqbOidcSettings extends Omit<OidcVerifierOptions, 'onRejected' | 'onUnavailable' | 'onStaleKeys'> {
   userSync?: OidcUserSync;
 }
 
@@ -30,7 +30,9 @@ function verifierFrom(settings: IqbOidcSettings): OidcVerifier {
     ...options,
     onRejected: reason => logger.debug(`token refused: ${reason}`),
     // While the provider cannot be asked, nobody gets in: someone has to look
-    onUnavailable: reason => logger.warn(`the OpenID Connect provider cannot be asked: ${reason}`)
+    onUnavailable: reason => logger.warn(`the OpenID Connect provider cannot be asked: ${reason}`),
+    // Tokens still hold, with the keys fetched before -- for up to a day
+    onStaleKeys: reason => logger.warn(`the OpenID Connect provider's keys are not current: ${reason}`)
   });
 }
 

@@ -9,9 +9,10 @@ describe('OidcVerifier', () => {
   const provider = new FakeProvider();
   let onRejected: ReturnType<typeof vi.fn<(reason: string, error?: unknown) => void>>;
   let onUnavailable: ReturnType<typeof vi.fn<(reason: string, error?: unknown) => void>>;
+  let onStaleKeys: ReturnType<typeof vi.fn<(reason: string) => void>>;
 
   const verifier = (options: Partial<ConstructorParameters<typeof OidcVerifier>[0]> = {}) => new OidcVerifier({
-    issuer: provider.issuer, clientId: 'studio', onRejected, onUnavailable, ...options
+    issuer: provider.issuer, clientId: 'studio', onRejected, onUnavailable, onStaleKeys, ...options
   });
 
   beforeAll(() => provider.start());
@@ -19,6 +20,7 @@ describe('OidcVerifier', () => {
   beforeEach(() => {
     onRejected = vi.fn<(reason: string, error?: unknown) => void>();
     onUnavailable = vi.fn<(reason: string, error?: unknown) => void>();
+    onStaleKeys = vi.fn<(reason: string) => void>();
   });
 
   it('names the person of a token that holds, finding the keys through discovery', async () => {
@@ -147,17 +149,36 @@ describe('OidcVerifier', () => {
   it('keeps checking tokens with the keys it has while the provider\'s keys cannot be fetched', async () => {
     const keeping = verifier();
     expect(await keeping.verify(await provider.sign())).not.toBeNull();
-    provider.keysDown = true;
+    provider.keysAnswer = 503;
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 11 * 60 * 1000 });
     try {
       expect(await keeping.verify(await provider.sign())).not.toBeNull();
+      expect(onStaleKeys).toHaveBeenCalledTimes(1);
       const fetches = provider.jwksFetches;
       expect(await keeping.verify(await provider.sign())).not.toBeNull();
       expect(provider.jwksFetches).toBe(fetches);
-      expect(onUnavailable).toHaveBeenCalledTimes(1);
+      // Tokens still hold: no outage to report
+      expect(onUnavailable).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
-      provider.keysDown = false;
+      provider.keysAnswer = null;
+    }
+  });
+
+  it('refuses a token of a key it does not know during an outage, as the token\'s fault', async () => {
+    const keeping = verifier();
+    expect(await keeping.verify(await provider.sign())).not.toBeNull();
+    provider.keysAnswer = 503;
+    await provider.addKey('key-forged');
+    const forged = await provider.sign({}, { kid: 'key-forged' });
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31_000 });
+    try {
+      expect(await keeping.verify(forged)).toBeNull();
+      expect(onRejected).toHaveBeenCalledTimes(1);
+      expect(onUnavailable).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      provider.keysAnswer = null;
     }
   });
 

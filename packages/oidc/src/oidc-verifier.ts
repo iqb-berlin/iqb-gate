@@ -2,7 +2,7 @@ import {
   decodeProtectedHeader, errors, type JWTPayload, jwtVerify, type JWTVerifyGetKey
 } from 'jose';
 import { identityOf, type OidcIdentity } from './identity.js';
-import { ProviderKeys } from './provider-keys.js';
+import { ProviderKeys, RETRY_PAUSE_MS } from './provider-keys.js';
 
 export interface OidcVerifierOptions {
   /** The provider's issuer, as in its tokens, e.g. `https://login.example.org/realms/iqb`. */
@@ -30,6 +30,12 @@ export interface OidcVerifierOptions {
    * holds, and someone has to look. For a warning in the log.
    */
   onUnavailable?: (reason: string, error?: unknown) => void;
+  /**
+   * Told when the provider's keys could not be fetched again: the keys fetched before go on
+   * checking tokens, for up to a day. Tokens still hold, but someone should look. For a warning --
+   * {@link onUnavailable} does not hear of it, as it means that no token holds.
+   */
+  onStaleKeys?: (reason: string) => void;
 }
 
 /**
@@ -49,9 +55,6 @@ const ACCESS_TOKEN_HEADER_TYPES = ['jwt', 'at+jwt', 'application/at+jwt'];
 const ID_TOKEN_CLAIMS = ['at_hash', 'c_hash', 's_hash'];
 
 const DISCOVERY_TIMEOUT_MS = 5000;
-
-/** How long a failed discovery stands before it is tried again -- not with every token. */
-const DISCOVERY_RETRY_MS = 30 * 1000;
 
 /** A refusal of the token itself. */
 class TokenRejected extends Error {}
@@ -146,17 +149,17 @@ export class OidcVerifier {
 
   /**
    * The provider's keys, kept by {@link ProviderKeys}. A failed discovery stands for
-   * {@link DISCOVERY_RETRY_MS}: while the provider is down, not every token sends another request
-   * after it.
+   * {@link RETRY_PAUSE_MS}, as a failed fetch of the keys does: while the provider is down, not
+   * every token sends another request after it.
    */
   private keys(): Promise<JWTVerifyGetKey> {
-    if (this.keySet && this.keySetFailedAt && Date.now() - this.keySetFailedAt >= DISCOVERY_RETRY_MS) {
+    if (this.keySet && this.keySetFailedAt && Date.now() - this.keySetFailedAt >= RETRY_PAUSE_MS) {
       this.keySet = null;
     }
     if (!this.keySet) {
       this.keySetFailedAt = 0;
       const keySet = this.jwksUri()
-        .then(uri => new ProviderKeys(uri, reason => this.options.onUnavailable?.(reason)))
+        .then(uri => new ProviderKeys(uri, reason => this.options.onStaleKeys?.(reason)))
         .catch((error: unknown) => {
           this.keySetFailedAt = Date.now();
           throw error instanceof ProviderUnavailable ? error : new ProviderUnavailable(String(error));

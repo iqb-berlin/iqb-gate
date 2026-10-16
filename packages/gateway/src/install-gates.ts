@@ -47,7 +47,8 @@ export function installGates(gateway: FastifyInstance, config: GatewayConfig): G
   const verifier = config.oidc && new OidcVerifier({
     ...config.oidc,
     onRejected: reason => gateway.log.debug(`audit: token not verified: ${reason}`),
-    onUnavailable: reason => gateway.log.warn(`audit: the OpenID Connect provider cannot be asked: ${reason}`)
+    onUnavailable: reason => gateway.log.warn(`audit: the OpenID Connect provider cannot be asked: ${reason}`),
+    onStaleKeys: reason => gateway.log.warn(`audit: the OpenID Connect provider's keys are not current: ${reason}`)
   });
   // Kept as long as identical rejections fold into one entry
   const writeNames = new AuditUserNames(verifier, config.writeGate.userClaim, MINUTE_MS);

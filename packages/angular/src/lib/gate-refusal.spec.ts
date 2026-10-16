@@ -57,6 +57,14 @@ describe('the refusal named in a header', () => {
     expect(gateRefusalOf(text)).toBe('not-verified');
   });
 
+  // Behind ForwardAuth the application's answers bypass the gateway, which cannot drop the header there
+  it('should leave a JSON answer to its body: the application\'s own 428 is the application\'s', () => {
+    const own = new HttpErrorResponse({
+      status: 428, error: { message: 'If-Match missing' }, headers: naming('human-verification-required')
+    });
+    expect(gateRefusalOf(own)).toBeNull();
+  });
+
   it('should count only with the status that goes with it', () => {
     expect(gateRefusalOf(new HttpErrorResponse({ status: 500, headers: naming('human-verification-required') })))
       .toBeNull();

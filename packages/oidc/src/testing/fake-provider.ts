@@ -14,12 +14,16 @@ type PrivateKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 export class FakeProvider {
   issuer = '';
   jwksFetches = 0;
-  /** While set, the keys cannot be fetched: their address answers 503 (and counts the attempt). */
-  keysDown = false;
+  /**
+   * What the address of the keys answers: the keys while `null`, else this status with no body --
+   * 503 for a provider that is down, 404 for one that withdrew its keys. Attempts are counted.
+   */
+  keysAnswer: number | null = null;
   /** What the discovery document says the issuer is; the real one unless a test changes it. */
   announcedIssuer: string | null = null;
   private server: Server | null = null;
   private keys: Array<{ kid: string; privateKey: PrivateKey; publicJwk: JWK }> = [];
+  private readonly removed = new Set<string>();
 
   async start(): Promise<void> {
     await this.addKey('key-1');
@@ -34,12 +38,13 @@ export class FakeProvider {
       }
       if (request.url === '/realms/iqb/protocol/openid-connect/certs') {
         this.jwksFetches += 1;
-        if (this.keysDown) {
-          response.writeHead(503).end();
+        if (this.keysAnswer !== null) {
+          response.writeHead(this.keysAnswer).end();
           return;
         }
         response.writeHead(200, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ keys: this.keys.map(key => key.publicJwk) }));
+        const published = this.keys.filter(key => !this.removed.has(key.kid));
+        response.end(JSON.stringify({ keys: published.map(key => key.publicJwk) }));
         return;
       }
       response.writeHead(404).end();
@@ -52,17 +57,27 @@ export class FakeProvider {
     await new Promise(resolve => { this.server?.close(resolve); });
   }
 
+  /**
+   * Stops publishing a key, as a provider does with one it rotated out -- it can still sign with
+   * it, as whoever took a compromised key can.
+   */
+  removeKey(kid: string): void {
+    this.removed.add(kid);
+  }
+
   async addKey(kid: string): Promise<void> {
     const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
     this.keys.push({ kid, privateKey, publicJwk: { ...await exportJWK(publicKey), kid, alg: 'RS256', use: 'sig' } });
   }
 
   /**
-   * A token as the provider issues it: signed with its newest key, valid for five minutes --
+   * A token as the provider issues it: signed with its newest published key, valid for five minutes --
    * `expiresIn: null` leaves the expiry out.
    */
   async sign(claims: JWTPayload = {}, options: { kid?: string; expiresIn?: string | null } = {}): Promise<string> {
-    const key = options.kid ? this.keys.find(candidate => candidate.kid === options.kid) : this.keys.at(-1);
+    const key = options.kid
+      ? this.keys.find(candidate => candidate.kid === options.kid)
+      : this.keys.filter(candidate => !this.removed.has(candidate.kid)).at(-1);
     if (!key) throw new Error(`no key ${options.kid}`);
     const token = new SignJWT({
       iss: this.issuer,

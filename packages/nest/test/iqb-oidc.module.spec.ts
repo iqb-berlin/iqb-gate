@@ -1,8 +1,10 @@
 import 'reflect-metadata';
 import {
-  afterAll, beforeAll, describe, expect, it
+  afterAll, beforeAll, describe, expect, it, vi
 } from 'vitest';
-import { Inject, Injectable, Module } from '@nestjs/common';
+import {
+  Inject, Injectable, Logger, Module
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FakeProvider } from '@iqb/gate-oidc/testing';
 import {
@@ -79,6 +81,25 @@ describe('IqbOidcModule', () => {
     expect(feature.guard).toBeInstanceOf(OidcAuthGuard);
     expect(feature.verifier).toBe(moduleRef.get(OIDC_VERIFIER));
     await moduleRef.close();
+  });
+
+  // Tokens still hold then, but someone should look at the provider
+  it('warns when the provider\'s keys cannot be fetched again and the ones fetched before are used', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const moduleRef = await compile([IqbOidcModule.forRoot({ issuer: provider.issuer, clientId: 'studio' })]);
+    const verifier = moduleRef.get<OidcVerifier>(OIDC_VERIFIER);
+    try {
+      expect(await verifier.verify(await provider.sign())).not.toBeNull();
+      provider.keysAnswer = 503;
+      vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 11 * 60 * 1000 });
+      expect(await verifier.verify(await provider.sign())).not.toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('keys are not current'));
+    } finally {
+      vi.useRealTimers();
+      provider.keysAnswer = null;
+      warn.mockRestore();
+      await moduleRef.close();
+    }
   });
 
   it('refuses settings without the client the tokens have to be for', async () => {

@@ -11,7 +11,7 @@ import fastifyCookie from '@fastify/cookie';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { ClientOptions } from 'ws';
 import { GATE_PREFIX, type GatewayConfig } from './config.js';
-import { forwardedHeaders } from './forwarded-headers.js';
+import { forwardedHeaders, withoutReservedHeaders } from './forwarded-headers.js';
 import { timeoutSecondsFor } from './timeouts.js';
 import { installGates } from './install-gates.js';
 import { installPageGate } from './page-gate/install-page-gate.js';
@@ -123,6 +123,7 @@ export async function buildGateway(
     undici: { connections: null },
     replyOptions: {
       rewriteRequestHeaders: forwardedFor,
+      rewriteHeaders: withoutReservedHeaders,
       onError: replyUpstreamError,
       // reply-from repeats a GET the upstream answered with 503; the client should see that 503.
       retryDelay: () => null

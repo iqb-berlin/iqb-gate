@@ -3,30 +3,41 @@ import { createLocalJWKSet, errors, type JSONWebKeySet, type JWTVerifyGetKey } f
 /** Keys younger than this are used without asking the provider. */
 const FRESH_MS = 10 * 60 * 1000;
 
-/** A fetch that failed stands this long; a key id not known yet is asked for at most this often. */
-const PAUSE_MS = 30 * 1000;
+/**
+ * A fetch that failed stands this long, and a key id not known yet is asked for at most this
+ * often: while the provider is down, not every token sends another request after it. The
+ * verifier pauses its discovery as long.
+ */
+export const RETRY_PAUSE_MS = 30 * 1000;
 
-/** How long the keys outlive a provider that cannot be reached, before its tokens are refused. */
+/** How long the keys outlive a provider that cannot be asked, before its tokens are refused. */
 const STALE_LIMIT_MS = 24 * 60 * 60 * 1000;
 
 const FETCH_TIMEOUT_MS = 5000;
 
+type LocalKeys = ReturnType<typeof createLocalJWKSet>;
+
 /**
- * The published keys of one provider, kept between tokens. Fresh keys are used without a request,
- * older ones are fetched again, and a fetch that failed is not repeated before a pause -- not with
- * every token while the provider is down. Keys already known go on checking tokens through an
- * outage of up to a day; a key the provider drops while it can be reached is gone with the next
- * fetch. (jose's remote key set fetches before every token while it cannot, and then drops what it
- * has.)
+ * The published keys of one provider, kept between tokens. Fresh keys are used without a request;
+ * older ones are fetched again before the token is checked, so that a key the provider removed
+ * holds no longer than ten minutes. Only a key set the provider answers with replaces the keys:
+ * a provider removes a key by publishing the set without it. Anything else -- no connection, a
+ * status other than 200 (a proxy answers 404 while the provider restarts), a redirect, what is no
+ * key set -- leaves the keys fetched before checking tokens, for up to a day, and is not tried
+ * again before a pause. (jose's remote key set fetches before every token while it cannot, and
+ * then drops what it has.)
+ *
+ * Not done: a key address that moved is not looked up again through discovery -- the keys go
+ * stale and, after a day, refused; a restart finds the new one.
  */
 export class ProviderKeys {
-  private keys: ReturnType<typeof createLocalJWKSet> | null = null;
+  private keys: LocalKeys | null = null;
   private fetchedAt = 0;
   private failedAt = 0;
   private failure: Error | null = null;
   private pending: Promise<void> | null = null;
 
-  /** `onStale` hears of a fetch that failed while the keys it has are still used. */
+  /** `onStale` hears of a fetch that failed while the keys fetched before go on checking tokens. */
   constructor(private readonly uri: string, private readonly onStale: (reason: string) => void = () => {}) {}
 
   /** The key for a token's header, as `jwtVerify` asks for it. */
@@ -36,13 +47,16 @@ export class ProviderKeys {
       return await keys(header, token);
     } catch (error) {
       // A key id not known yet: the provider may have added a key since the last fetch
-      if (!(error instanceof errors.JWKSNoMatchingKey) || Date.now() - this.fetchedAt < PAUSE_MS) throw error;
-      await this.refresh();
+      if (!(error instanceof errors.JWKSNoMatchingKey) || Date.now() - this.fetchedAt < RETRY_PAUSE_MS) throw error;
+      // A provider that cannot be asked leaves the key unknown -- the token's fault, not an outage
+      await this.refresh().catch(() => {
+        throw error;
+      });
       return (await this.current())(header, token);
     }
   };
 
-  private async current(): Promise<ReturnType<typeof createLocalJWKSet>> {
+  private async current(): Promise<LocalKeys> {
     if (this.keys && Date.now() - this.fetchedAt < FRESH_MS) return this.keys;
     try {
       await this.refresh();
@@ -55,14 +69,14 @@ export class ProviderKeys {
     return this.keys;
   }
 
-  /** The keys while the provider cannot be reached -- until they are a day old. */
-  private keysWhileStale(): ReturnType<typeof createLocalJWKSet> | null {
+  /** The keys fetched before, while the provider cannot be asked -- until they are a day old. */
+  private keysWhileStale(): LocalKeys | null {
     return this.keys && Date.now() - this.fetchedAt < STALE_LIMIT_MS ? this.keys : null;
   }
 
-  /** Fetches the keys, once for all who ask at the same time; a failure stands for {@link PAUSE_MS}. */
+  /** Fetches the keys, once for all who ask at the same time; a failure stands for {@link RETRY_PAUSE_MS}. */
   private refresh(): Promise<void> {
-    if (this.failure && Date.now() - this.failedAt < PAUSE_MS) return Promise.reject(this.failure);
+    if (this.failure && Date.now() - this.failedAt < RETRY_PAUSE_MS) return Promise.reject(this.failure);
     this.pending ??= this.fetchKeys().finally(() => {
       this.pending = null;
     });
@@ -71,20 +85,26 @@ export class ProviderKeys {
 
   private async fetchKeys(): Promise<void> {
     try {
-      const response = await fetch(this.uri, {
-        headers: { accept: 'application/json, application/jwk-set+json' },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-      });
-      if (!response.ok) throw new Error(`the provider's keys at ${this.uri} answered ${response.status}`);
-      // Refuses what is no key set
-      this.keys = createLocalJWKSet(await response.json() as JSONWebKeySet);
+      this.keys = await this.fetchKeySet();
       this.fetchedAt = Date.now();
       this.failure = null;
     } catch (error) {
       this.failure = error instanceof Error ? error : new Error(String(error));
       this.failedAt = Date.now();
-      if (this.keysWhileStale()) this.onStale(`${this.failure.message}; the keys fetched before are used`);
+      if (this.keysWhileStale()) this.onStale(`${this.failure.message}; the keys fetched before go on checking tokens`);
       throw this.failure;
     }
+  }
+
+  private async fetchKeySet(): Promise<LocalKeys> {
+    const response = await fetch(this.uri, {
+      headers: { accept: 'application/json, application/jwk-set+json' },
+      // Keys from wherever a redirect points are no keys of the provider's
+      redirect: 'manual',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
+    if (response.status !== 200) throw new Error(`the provider's keys at ${this.uri} answered ${response.status}`);
+    // Refuses what is no key set
+    return createLocalJWKSet(await response.json() as JSONWebKeySet);
   }
 }

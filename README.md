@@ -203,9 +203,13 @@ const verifier = new OidcVerifier({ issuer: 'https://login.example.org/realms/iq
 const identity = await verifier.verify(token); // OidcIdentity, or null for any token that does not hold
 ```
 
-It finds the provider's keys through its discovery document (or `jwksUri`), keeps them and fetches
-them again for an unknown key id; it accepts asymmetric signatures only (no `none`, no shared
-secrets) and checks the issuer, the expiry (a token without one is refused), that it is an access
+It finds the provider's keys through its discovery document (or `jwksUri`) and keeps them: after
+10 minutes it fetches them again before it checks a token, so that a key the provider removed holds
+no longer than that, and for an unknown key id at most every 30 seconds. Only a key set the provider
+answers with replaces them; while it cannot be asked (no connection, another status, a redirect),
+the keys fetched before go on checking tokens for up to a day, `onStaleKeys` hears of it, and it is
+asked again after 30 seconds. It accepts asymmetric signatures only (no `none`, no shared secrets)
+and checks the issuer, the expiry (a token without one is refused), that it is an access
 token -- Keycloak's `typ`, the header type, and no claim only ID tokens carry (`at_hash`, `c_hash`,
 `s_hash`) -- that the client is named in `aud` or as `azp`, and, when given, the `audience`.
 `clientId` is required: without it, a token the provider issued to any other client would hold.
@@ -247,9 +251,10 @@ An application that checks further tokens of its own in one strategy (coding-box
 injects the verifier as `OIDC_VERIFIER` there. The package is CommonJS, as Nest applications are,
 and needs Node 22.12 or later.
 
-With an `oidc` section in its configuration, the gateway checks the Bearer token of every checked
-write that way and names the person in the audit log, marked as checked. It never decides about the
-write because of the token -- the application does.
+With an `oidc` section in its configuration (`issuer` and the required `clientId`; a section
+without it stops the gateway at start), the gateway checks the Bearer token of every checked write
+that way and names the person in the audit log, marked as checked. It never decides about the write
+because of the token -- the application does.
 
 ## Pages only for browsers that do the work
 

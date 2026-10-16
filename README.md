@@ -21,10 +21,16 @@ The gateway owns the paths below `/.iqb-gate/`; everything else goes to the appl
 | Package | What it is |
 |---|---|
 | `packages/gateway` | the gateway (Node 24, Fastify) -- a reverse proxy, Traefik's ForwardAuth, or both -- shipped as a Docker image |
-| `packages/protocol` | what the gateway and the browser agree on: header, paths, status codes, types (ES modules and CommonJS) |
+| `packages/protocol` | `@iqb/gate-protocol`: what the gateway and the browser agree on: header, paths, status codes, types (ES modules and CommonJS) |
 | `packages/oidc` | `@iqb/gate-oidc`: checks OpenID Connect access tokens against the provider's keys (Node) |
 | `packages/nest` | `@iqb/gate-nest`: the same for NestJS backends -- a module, a guard, a parameter decorator |
 | `packages/angular` | `@iqb/gate-angular`: the browser half for Angular 20 and 21 applications |
+
+The four libraries are published to npm under `@iqb` (see [Publishing](#publishing)); the gateway
+is not -- it ships only as the Docker image.
+
+To try it all locally -- Keycloak, a demo page and API, the gateway in front -- see
+[examples/README.md](examples/README.md).
 
 ## Running the gateway
 
@@ -234,8 +240,9 @@ me(@OidcIdentity() identity: OidcIdentityData, @Req() request: { user: User }) {
 
 `OidcAuthGuard` answers 401 for a request without a valid token of the provider, and 403 for a
 person the `userSync` does not take -- known, but not let in, so that the browser does not take it
-for an expired login. Alike in every module and as global guard, as the module sets both up itself. `@OidcIdentity()` refuses a route the guard did not check. Only HTTP requests are let in. An
-application that checks further tokens of its own in one strategy (coding-box: workspace tokens)
+for an expired login. Alike in every module and as global guard, as the module sets both up
+itself. `@OidcIdentity()` refuses a route the guard did not check. Only HTTP requests are let in.
+An application that checks further tokens of its own in one strategy (coding-box: workspace tokens)
 injects the verifier as `OIDC_VERIFIER` there. The package is CommonJS, as Nest applications are,
 and needs Node 22.12 or later.
 
@@ -334,10 +341,11 @@ backends check the token with `@iqb/gate-nest` or `@iqb/gate-oidc`.
 Applications that register interceptors as classes use `IqbGateInterceptor` with
 `HTTP_INTERCEPTORS` instead. `isGateRefusal(error)` tells an error the gateway caused -- the
 library has already said why -- so that the application leaves it out of its own error display;
-`gateRefusalOf(error)` and `isAutomationDetected(error)` name it. `@iqb/gate-protocol` ships CommonJS
-beside its ES modules, so Jest loads it without a `transformIgnorePatterns` entry. Requests to other origins (an identity provider) and to the
-gateway's own paths are left untouched. The widget (`altcha`) is loaded only when a challenge is
-due; the page needs `worker-src 'self' blob:` in its Content Security Policy.
+`gateRefusalOf(error)` and `isAutomationDetected(error)` name it. `@iqb/gate-protocol` ships
+CommonJS beside its ES modules, so Jest loads it without a `transformIgnorePatterns` entry.
+Requests to other origins (an identity provider) and to the gateway's own paths are left untouched.
+The widget (`altcha`) is loaded only when a challenge is due; the page needs
+`worker-src 'self' blob:` in its Content Security Policy.
 
 ## Development
 
@@ -347,7 +355,41 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run build:examples
 ```
+
+Development needs Node 24.2 or later (the root `engines`; the root scripts use `import.meta.main`).
+`npm test` runs the specs of every package and of the root scripts; the packages build from an empty
+`dist`, so a module deleted from the source does not linger there.
 
 How code is written here -- and how the rules of studio-lite are adapted to a gateway and its
 libraries -- is in [rules.md](rules.md).
+
+## Publishing
+
+The four libraries go to npm together, with one version:
+
+```bash
+npm login                          # an account with publish rights in the @iqb organisation
+npm run version:set -- 0.1.0       # then commit the changed package.json files and the lockfile
+npm run publish:dry-run            # checks, tests and builds, then packs what it would publish
+npm run publish:npm
+```
+
+`version:set` gives every `@iqb/gate-*` package the version -- the gateway's as well, which the
+image carries -- and points every range between them, those of the examples included, at it.
+
+Before the slow part, `publish:npm` checks that the four libraries share one version other than
+0.0.0, that their ranges between each other point at it, and that everything is committed; any of
+these stops it. Then it lints, type-checks, tests and builds, and publishes `@iqb/gate-protocol`,
+`-oidc`, `-nest` and `-angular` in that order, the Angular library from its `dist`. A version
+already on npm is skipped -- so running it again finishes a publish that stopped halfway, and a
+dry run then packs only what is still missing. Arguments go on to `npm publish`: a prerelease needs
+a tag (`npm run publish:npm -- --tag next`).
+
+Before anything is pushed or published, [rules.md](rules.md) asks for lint and a code review of what
+goes out, and for the published commit to be tagged: `v<version>` for the libraries,
+`gateway-v<version>` for the image. There is no publish script for the image: it is built with the
+command under [Running the gateway](#running-the-gateway), but from the committed release with
+nothing beside it: `git status --ignored` lists nothing that `.dockerignore` does not leave out
+(`node_modules`, `dist`), because `docker build` takes the files as they lie.

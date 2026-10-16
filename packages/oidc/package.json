@@ -1,6 +1,6 @@
 {
   "name": "@iqb/gate-oidc",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Checks OpenID Connect access tokens against the provider's keys, for the iqb-gate gateway and NestJS backends",
   "license": "MIT",
   "publishConfig": {
@@ -37,7 +37,7 @@
     "vitest": "4.1.11"
   },
   "dependencies": {
-    "@iqb/gate-protocol": "^0.0.0",
+    "@iqb/gate-protocol": "^0.1.0",
     "jose": "6.2.12"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@iqb/gate-nest",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Checks OpenID Connect Bearer tokens in NestJS backends: a module, a guard, a parameter decorator",
   "license": "MIT",
   "publishConfig": {
@@ -27,7 +27,7 @@
     "rxjs": "^7.1.0"
   },
   "dependencies": {
-    "@iqb/gate-oidc": "^0.0.0"
+    "@iqb/gate-oidc": "^0.1.0"
   },
   "devDependencies": {
     "@golevelup/ts-vitest": "4.0.0",

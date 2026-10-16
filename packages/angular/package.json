@@ -1,6 +1,6 @@
 {
   "name": "@iqb/gate-angular",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The browser half of iqb-gate for Angular applications: client signals with every write, the ALTCHA challenge when the gateway asks for it",
   "license": "MIT",
   "publishConfig": {
@@ -21,7 +21,7 @@
   },
   "sideEffects": false,
   "dependencies": {
-    "@iqb/gate-protocol": "^0.0.0",
+    "@iqb/gate-protocol": "^0.1.0",
     "altcha": "3.3.0",
     "angular-auth-oidc-client": "22.0.1",
     "tslib": "2.8.1"

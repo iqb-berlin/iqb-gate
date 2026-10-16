@@ -1,4 +1,5 @@
-# Built from the repository root: docker build -f packages/gateway/Dockerfile -t iqbberlin/iqb-gate .
+# Built from the repository root: docker build -f packages/gateway/Dockerfile -t iqb-gate:local .
+# A release image is built in a fresh git worktree of the release commit instead (rules.md).
 FROM node:24.20.0-alpine AS build
 WORKDIR /build
 COPY package.json package-lock.json tsconfig.base.json ./

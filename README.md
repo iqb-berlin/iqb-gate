@@ -389,7 +389,6 @@ a tag (`npm run publish:npm -- --tag next`).
 
 Before anything is pushed or published, [rules.md](rules.md) asks for lint and a code review of what
 goes out, and for the published commit to be tagged: `v<version>` for the libraries,
-`gateway-v<version>` for the image. There is no publish script for the image: it is built with the
-command under [Running the gateway](#running-the-gateway), but from the committed release with
-nothing beside it: `git status --ignored` lists nothing that `.dockerignore` does not leave out
-(`node_modules`, `dist`), because `docker build` takes the files as they lie.
+`gateway-v<version>` for the image. There is no publish script for the image yet. A release image
+is built in a fresh `git worktree` of the reviewed release commit, named by its hash -- never from
+the working copy, as `docker build` takes the files as they lie, not as they are committed.

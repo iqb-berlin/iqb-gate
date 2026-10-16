@@ -69,8 +69,10 @@ listed (TypeORM, GitHub pull requests, board and tickets) does not apply.
   only then come `npm run publish:dry-run` and the publish.
   - The image carries the version of the packages. A release of the image alone runs `version:set`
     too, and that version is not published to npm afterwards from another commit.
-  - The image is built from that commit with nothing beside it (`git status --ignored`):
-    `docker build` takes the files as they lie, ignored ones included, not as they are committed.
+  - The image is built in a fresh `git worktree` of that commit, never from the working copy:
+    `docker build` takes the files as they lie -- untracked, modified or skip-worktree ones too --
+    not as they are committed. A worktree holds the tracked files as checked out, nothing beside
+    them.
 - **Rule**: When asking the person you work for to approve the publish, name the review's range.
   Once published, tag the published commit (`v<version>`, `gateway-v<version>`), so that the next
   review knows where to start.

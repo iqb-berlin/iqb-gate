@@ -44,15 +44,22 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
   readonly failed = signal(false);
   /** No challenge, or no widget, could be loaded; the person can try again instead of losing the write. */
   readonly loadFailed = signal(false);
+  /**
+   * The widget failed to load more than once: a browser that keeps a failed module fetch rejects
+   * every further try at once, and only a reload of the page helps.
+   */
+  readonly reloadNeeded = signal(false);
+  private widgetLoadFailures = 0;
   private ngUnsubscribe = new Subject<void>();
 
   ngOnInit(): void {
     this.load();
   }
 
-  /** Loads what is missing: the widget, unless it is there, and a new challenge. */
+  /** Loads what is missing: the widget, unless it is there, and a new challenge -- a fresh start. */
   load(): void {
     this.loadFailed.set(false);
+    this.failed.set(false);
     if (!this.widgetReady()) this.loadWidget();
     this.loadChallenge();
   }
@@ -63,7 +70,11 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
         this.registerWidgetTexts();
         this.widgetReady.set(true);
       },
-      () => this.loadFailed.set(true)
+      () => {
+        this.widgetLoadFailures += 1;
+        this.reloadNeeded.set(this.widgetLoadFailures > 1);
+        this.loadFailed.set(true);
+      }
     );
   }
 
@@ -80,6 +91,8 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
         if (challenge) {
           this.challenge.set(JSON.stringify(challenge));
         } else {
+          // Instead of the failure of an earlier solution: there is nothing to solve now
+          this.failed.set(false);
           this.loadFailed.set(true);
         }
       });

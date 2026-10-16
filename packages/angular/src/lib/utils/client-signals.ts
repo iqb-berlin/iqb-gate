@@ -41,25 +41,37 @@ export function collectClientSignals(
   };
 }
 
-/** What of a WebGL context the renderer check reads; a canvas's `webgl` context has it. */
+/** What of a WebGL context the renderer check uses; a canvas's `webgl` context has it. */
 interface RendererSource {
   readonly RENDERER: number;
   getExtension(name: 'WEBGL_debug_renderer_info'): { readonly UNMASKED_RENDERER_WEBGL: number } | null;
+  getExtension(name: 'WEBGL_lose_context'): { loseContext(): void } | null;
   getParameter(name: number): unknown;
 }
 
-/** Whether WebGL draws in software. `false` where WebGL or the renderer name is not available. */
+/**
+ * Whether WebGL draws in software. `false` where WebGL or the renderer name is not available. The
+ * context is released once the name is read: browsers keep only a few live contexts and drop the
+ * oldest, which could be the application's own.
+ */
 export function detectSoftwareRenderer(
   createCanvas: () => { getContext(contextId: 'webgl'): RendererSource | null }
 ): boolean {
+  let gl: RendererSource | null = null;
   try {
-    const gl = createCanvas().getContext('webgl');
+    gl = createCanvas().getContext('webgl');
     if (!gl) return false;
     const info = gl.getExtension('WEBGL_debug_renderer_info');
     const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
     return typeof renderer === 'string' && SOFTWARE_RENDERERS.test(renderer);
   } catch {
     return false;
+  } finally {
+    try {
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch {
+      // A context that cannot be released is left to the garbage collector
+    }
   }
 }
 

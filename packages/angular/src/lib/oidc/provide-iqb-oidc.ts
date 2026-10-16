@@ -71,6 +71,9 @@ export function provideIqbOidc(options: IqbOidcOptions): EnvironmentProviders {
             useRefreshToken: true,
             renewTimeBeforeTokenExpiresInSeconds: RENEW_BEFORE_EXPIRY_SECONDS,
             ignoreNonceAfterRefresh: true,
+            // The library would navigate to '/' after a login, and to '/unauthorized' after a failed
+            // one -- racing checkAuthAtStart, which returns to the page a forced login left
+            triggerAuthorizationResultEvent: true,
             secureRoutes: options.apiUrls
           });
         }

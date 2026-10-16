@@ -7,6 +7,7 @@ import { MatDialogRef } from '@angular/material/dialog';
 import { of } from 'rxjs';
 import { GateVerificationDialogComponent } from './gate-verification-dialog.component';
 import { GateChallengeService } from '../../services/gate-challenge.service';
+import { DEFAULT_GATE_TEXTS } from '../../gate-texts';
 
 /** Whether loading the widget fails, as after a deployment that removed its old chunk. */
 let mockWidgetUnavailable = false;
@@ -60,6 +61,23 @@ describe('GateVerificationDialogComponent, loading the widget', () => {
 
     expect(fixture.componentInstance.loadFailed()).toBe(false);
     expect(fixture.nativeElement.querySelector('altcha-widget')).not.toBeNull();
+  });
+
+  // A browser that keeps a failed module fetch rejects every further import at once: only a reload helps
+  it('should say that a reload may be needed once the widget fails to load again', async () => {
+    // An earlier test loaded the widget: forget it, so that loading it fails again
+    jest.resetModules();
+    mockWidgetUnavailable = true;
+    const fixture = await createDialog();
+    expect(fixture.nativeElement.textContent).not.toContain(DEFAULT_GATE_TEXTS.reloadNeeded);
+
+    fixture.nativeElement.querySelector('[data-cy="human-verification-retry"]').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.loadFailed()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain(DEFAULT_GATE_TEXTS.reloadNeeded);
+    expect(fixture.nativeElement.querySelector('[data-cy="human-verification-retry"]')).not.toBeNull();
   });
 
   // Angular 21 creates applications without zone.js

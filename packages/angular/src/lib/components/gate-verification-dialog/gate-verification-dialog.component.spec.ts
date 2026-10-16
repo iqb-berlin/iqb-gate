@@ -60,6 +60,13 @@ describe('GateVerificationDialogComponent', () => {
     expect(widgetTexts.verify).toBe('Überprüfen');
   });
 
+  // ALTCHA reads them for its code challenge, though its own type leaves them out
+  it('should hand the widget the texts of its code challenge as well', () => {
+    const [, widgetTexts] = i18nSet.mock.calls[0];
+    expect(widgetTexts.cancel).toBe('Abbrechen');
+    expect(widgetTexts.enterCodeFromImage).toBe('Um fortzufahren, geben Sie bitte den Code aus dem Bild unten ein.');
+  });
+
   it('should hand the widget the challenge as JSON', () => {
     const widget = fixture.debugElement.query(By.css('altcha-widget')).nativeElement as HTMLElement;
     expect(JSON.parse(widget.getAttribute('challenge') as string)).toEqual(challenge);
@@ -83,6 +90,32 @@ describe('GateVerificationDialogComponent', () => {
     expect(component.failed()).toBe(true);
     expect(challengeService.challenge).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.querySelector('.gate-verification-failed')).not.toBeNull();
+  });
+
+  it('should say only that loading failed when no new challenge comes after a rejected solution', () => {
+    challengeService.verify.mockReturnValue(of(false));
+    challengeService.challenge.mockReturnValue(of(null));
+
+    component.onVerified(verifiedEvent('payload'));
+    fixture.detectChanges();
+
+    expect(component.loadFailed()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain(texts.loadFailed);
+    expect(fixture.nativeElement.textContent).not.toContain(texts.failed);
+  });
+
+  it('should drop the failure of an earlier solution once the person tries again', () => {
+    challengeService.verify.mockReturnValue(of(false));
+    component.onVerified(verifiedEvent('payload'));
+    fixture.detectChanges();
+    expect(component.failed()).toBe(true);
+
+    component.load();
+    fixture.detectChanges();
+
+    expect(component.failed()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.gate-verification-failed')).toBeNull();
+    expect(fixture.debugElement.query(By.css('altcha-widget'))).not.toBeNull();
   });
 
   it('should ignore an event without a payload', () => {

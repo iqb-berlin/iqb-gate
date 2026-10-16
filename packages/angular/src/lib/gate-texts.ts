@@ -1,9 +1,13 @@
 import { InjectionToken } from '@angular/core';
 
-/** The texts of the ALTCHA widget, under the names it reads them by. */
+/**
+ * The texts of the ALTCHA widget, under the names it reads them by -- `cancel` and
+ * `enterCodeFromImage` too, which its code challenge reads though its type `Strings` leaves them out.
+ */
 export const WIDGET_TEXT_NAMES = [
-  'ariaLinkLabel', 'enterCode', 'enterCodeAria', 'error', 'expired', 'footer', 'getAudioChallenge', 'label',
-  'loading', 'reload', 'verify', 'verificationRequired', 'verified', 'verifying', 'waitAlert'
+  'ariaLinkLabel', 'cancel', 'enterCode', 'enterCodeAria', 'enterCodeFromImage', 'error', 'expired', 'footer',
+  'getAudioChallenge', 'label', 'loading', 'reload', 'verify', 'verificationRequired', 'verified', 'verifying',
+  'waitAlert'
 ] as const;
 
 export type WidgetTextName = typeof WIDGET_TEXT_NAMES[number];
@@ -14,6 +18,8 @@ export interface GateTexts {
   intro: string;
   failed: string;
   loadFailed: string;
+  /** Once the widget failed to load again: a browser may keep the failure until the page is reloaded. */
+  reloadNeeded: string;
   retry: string;
   cancel: string;
   /** The title of the notice that the gateway did not let a request through. */
@@ -33,6 +39,8 @@ export const DEFAULT_GATE_TEXTS: GateTexts = {
     'Danach geht es weiter, wo Sie waren.',
   failed: 'Die Bestätigung ist nicht gelungen. Bitte versuchen Sie es noch einmal.',
   loadFailed: 'Die Bestätigung konnte nicht geladen werden. Bis dahin wird nichts geladen oder gespeichert.',
+  reloadNeeded: 'Falls es weiter nicht gelingt, laden Sie die Seite neu – was noch nicht gespeichert ist, ' +
+    'geht dabei verloren.',
   retry: 'Erneut versuchen',
   cancel: 'Abbrechen',
   refusalTitle: 'Nicht ausgeführt',
@@ -43,8 +51,10 @@ export const DEFAULT_GATE_TEXTS: GateTexts = {
   close: 'Schließen',
   widget: {
     ariaLinkLabel: 'Besuchen Sie altcha.org',
+    cancel: 'Abbrechen',
     enterCode: 'Code eingeben',
     enterCodeAria: 'Geben Sie den Code ein, den Sie hören. Drücken Sie die Leertaste, um den Ton abzuspielen.',
+    enterCodeFromImage: 'Um fortzufahren, geben Sie bitte den Code aus dem Bild unten ein.',
     error: 'Überprüfung fehlgeschlagen. Bitte versuchen Sie es später erneut.',
     expired: 'Überprüfung abgelaufen. Bitte erneut versuchen.',
     footer: 'Geschützt durch ALTCHA',

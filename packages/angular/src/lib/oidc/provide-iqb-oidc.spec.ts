@@ -38,6 +38,14 @@ describe('provideIqbOidc', () => {
     }));
   });
 
+  // Otherwise it navigates to '/' after a login and to '/unauthorized' after a failed one, racing the
+  // return to the page a forced login left
+  it('should keep the library from navigating on its own after a login', async () => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideIqbOidc(options)] });
+    const [config] = await firstValueFrom(TestBed.inject(StsConfigLoader).loadConfigs());
+    expect(config.triggerAuthorizationResultEvent).toBe(true);
+  });
+
   // offline_access would make Keycloak issue a refresh token that outlives the login session
   it('should ask for no offline access by default, and take a given scope as it is', async () => {
     TestBed.configureTestingModule({ providers: [provideHttpClient(), provideIqbOidc(options)] });

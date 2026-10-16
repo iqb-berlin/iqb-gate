@@ -59,7 +59,7 @@ describe('client signals', () => {
     const canvasWith = (renderer: string | null) => () => ({
       getContext: () => (renderer === null ? null : {
         RENDERER: 7937,
-        getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 37446 }),
+        getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 37446, loseContext: () => undefined }),
         getParameter: () => renderer
       })
     });
@@ -71,6 +71,23 @@ describe('client signals', () => {
 
     it('should not report a graphics card', () => {
       expect(detectSoftwareRenderer(canvasWith('ANGLE (Intel, Mesa Intel(R) UHD Graphics 620)'))).toBe(false);
+    });
+
+    // Browsers keep a few live contexts only and drop the oldest: the application's own could be one
+    it('should release the context it opened, also when reading the renderer fails', () => {
+      const loseContext = jest.fn();
+      const contextWith = (getParameter: () => unknown) => () => ({
+        getContext: () => ({
+          RENDERER: 7937,
+          getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 37446, loseContext }),
+          getParameter
+        })
+      });
+
+      expect(detectSoftwareRenderer(contextWith(() => 'Google SwiftShader'))).toBe(true);
+      expect(loseContext).toHaveBeenCalledTimes(1);
+      expect(detectSoftwareRenderer(contextWith(() => { throw new Error('context lost'); }))).toBe(false);
+      expect(loseContext).toHaveBeenCalledTimes(2);
     });
 
     it('should not report anything without WebGL', () => {

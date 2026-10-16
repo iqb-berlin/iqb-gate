@@ -15,6 +15,9 @@
   @if (loadFailed()) {
     <p class="gate-verification-failed">{{ texts.loadFailed }}</p>
   }
+  @if (loadFailed() && reloadNeeded()) {
+    <p class="gate-verification-failed">{{ texts.reloadNeeded }}</p>
+  }
 </div>
 <div mat-dialog-actions align="end">
   @if (loadFailed()) {

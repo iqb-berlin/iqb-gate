@@ -2,7 +2,7 @@ import {
   afterAll, beforeAll, beforeEach, describe, expect, it, vi
 } from 'vitest';
 import { SignJWT, UnsecuredJWT } from 'jose';
-import { OidcVerifier } from '../src/oidc-verifier.js';
+import { OidcVerifier, type OidcVerifierOptions } from '../src/oidc-verifier.js';
 import { FakeProvider, foreignToken } from '../src/testing/fake-provider.js';
 
 describe('OidcVerifier', () => {
@@ -84,6 +84,12 @@ describe('OidcVerifier', () => {
     expect(await verifier().verify(namedInAudience)).not.toBeNull();
   });
 
+  // Without a client, the token of any other client of the realm would hold
+  it('needs the client the tokens have to be for', () => {
+    expect(() => new OidcVerifier({ issuer: provider.issuer } as OidcVerifierOptions)).toThrow(/clientId/);
+    expect(() => verifier({ clientId: '' })).toThrow(/clientId/);
+  });
+
   it('checks a configured audience strictly', async () => {
     const strict = verifier({ audience: 'studio-api' });
     expect(await strict.verify(await provider.sign({ aud: 'studio-api' }))).not.toBeNull();
@@ -136,6 +142,23 @@ describe('OidcVerifier', () => {
       vi.useRealTimers();
     }
     expect(provider.jwksFetches).toBe(fetches + 1);
+  });
+
+  it('keeps checking tokens with the keys it has while the provider\'s keys cannot be fetched', async () => {
+    const keeping = verifier();
+    expect(await keeping.verify(await provider.sign())).not.toBeNull();
+    provider.keysDown = true;
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 11 * 60 * 1000 });
+    try {
+      expect(await keeping.verify(await provider.sign())).not.toBeNull();
+      const fetches = provider.jwksFetches;
+      expect(await keeping.verify(await provider.sign())).not.toBeNull();
+      expect(provider.jwksFetches).toBe(fetches);
+      expect(onUnavailable).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      provider.keysDown = false;
+    }
   });
 
   it('takes the keys from a given address without discovery', async () => {

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CLIENT_SIGNALS_HEADER } from '@iqb/gate-protocol';
+import { CLIENT_SIGNALS_HEADER, GATE_REFUSAL_HEADER } from '@iqb/gate-protocol';
 import type { CheckedRequest } from './path-rules.js';
 import type { CheckTarget } from './check-target.js';
 import { readSession, startSession } from './session/gate-session.js';
@@ -52,7 +52,8 @@ export function gatePreHandler(gate: Gate, context: AuditContext): GatePreHandle
       recordWhenAnswered(request, reply, { ...checked, presentedSession, assessment }, context);
     }
     if (!body) return false;
-    reply.code(body.statusCode).send(body);
+    // The header for a browser that cannot read the body: a HEAD request, a download
+    reply.code(body.statusCode).header(GATE_REFUSAL_HEADER, body.code).send(body);
     return true;
   };
 }

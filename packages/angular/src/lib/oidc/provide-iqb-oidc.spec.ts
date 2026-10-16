@@ -38,6 +38,19 @@ describe('provideIqbOidc', () => {
     }));
   });
 
+  // offline_access would make Keycloak issue a refresh token that outlives the login session
+  it('should ask for no offline access by default, and take a given scope as it is', async () => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideIqbOidc(options)] });
+    const [byDefault] = await firstValueFrom(TestBed.inject(StsConfigLoader).loadConfigs());
+    expect(byDefault.scope).toBe('openid profile email');
+
+    TestBed.resetTestingModule();
+    const scope = 'openid profile email offline_access';
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideIqbOidc({ ...options, scope })] });
+    const [given] = await firstValueFrom(TestBed.inject(StsConfigLoader).loadConfigs());
+    expect(given.scope).toBe(scope);
+  });
+
   it('should refuse API URLs a token could leak through', () => {
     expect(() => provideIqbOidc({ ...options, apiUrls: ['https://studio.example.org'] })).toThrow(/end with/);
   });

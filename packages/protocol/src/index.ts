@@ -49,6 +49,12 @@ export const AUTOMATION_DETECTED_STATUS = 403;
 /** The code in the body of that answer. */
 export const AUTOMATION_DETECTED_CODE = 'automation-detected';
 
+/**
+ * The response header that names the `code` of the gateway's refusal as well -- for answers whose
+ * body the browser cannot read as JSON: a HEAD request, a download asked for as a Blob or as text.
+ */
+export const GATE_REFUSAL_HEADER = 'x-iqb-gate-refusal';
+
 /** What the browser observed about itself and its input, collected for every request. */
 export interface ClientSignals {
   /** `navigator.webdriver`: set by WebDriver, Playwright, Puppeteer and Cypress. */

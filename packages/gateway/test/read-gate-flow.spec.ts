@@ -5,7 +5,8 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import {
-  CHALLENGE_PATH, type ClientSignals, type HumanVerificationChallenge, VERIFY_PATH
+  AUTOMATION_DETECTED_CODE, CHALLENGE_PATH, type ClientSignals, GATE_REFUSAL_HEADER,
+  HUMAN_VERIFICATION_REQUIRED_CODE, type HumanVerificationChallenge, VERIFY_PATH
 } from '@iqb/gate-protocol';
 import { buildGateway } from '../src/gateway.js';
 import type { GatewayConfig } from '../src/config.js';
@@ -145,6 +146,20 @@ describe('the read gate', () => {
     const response = await read('/api/workspaces/5');
     expect(response.status).toBe(428);
     expect(cookieFrom(response)).toMatch(/^iqb-gate-session=/);
+  });
+
+  it('names its refusal in a header as well, for answers without a body to read: HEAD, a download', async () => {
+    const unverified = await fetch(`${base}/api/workspaces/5/file`, {
+      method: 'HEAD', headers: { 'x-client-signals': signals() }
+    });
+    expect(unverified.status).toBe(428);
+    expect(unverified.headers.get(GATE_REFUSAL_HEADER)).toBe(HUMAN_VERIFICATION_REQUIRED_CODE);
+    const automated = await fetch(`${base}/api/workspaces/5/file`, { method: 'HEAD' });
+    expect(automated.status).toBe(403);
+    expect(automated.headers.get(GATE_REFUSAL_HEADER)).toBe(AUTOMATION_DETECTED_CODE);
+    const write = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'x-client-signals': signals() } });
+    expect(write.status).toBe(428);
+    expect(write.headers.get(GATE_REFUSAL_HEADER)).toBe(HUMAN_VERIFICATION_REQUIRED_CODE);
   });
 
   it('lets the reads of a session through once it solved the challenge, and logs none of them', async () => {

@@ -10,7 +10,7 @@ import {
 import {
   firstValueFrom, type Observable, of, throwError
 } from 'rxjs';
-import { type ClientSignals, CLIENT_SIGNALS_HEADER } from '@iqb/gate-protocol';
+import { type ClientSignals, CLIENT_SIGNALS_HEADER, GATE_REFUSAL_HEADER } from '@iqb/gate-protocol';
 import { iqbGateInterceptor, IqbGateInterceptor } from './iqb-gate.interceptor';
 import { GateInputActivityService } from '../services/gate-input-activity.service';
 import { GateVerificationService } from '../services/gate-verification.service';
@@ -201,6 +201,21 @@ describe('the interceptor in an HTTP client', () => {
       .flush({ code: 'human-verification-required' }, { status: 428, statusText: 'Precondition Required' });
     controller.expectOne('/api/x').flush({ saved: true });
     expect(answers).toEqual([{ saved: true }]);
+  });
+
+  // A download's body is a Blob: only the header says that the gateway asks for the challenge
+  it('repeats a download after the challenge, the refusal named in the header', () => {
+    const { http, controller } = setUp([provideHttpClient(withInterceptors([iqbGateInterceptor]))]);
+    const answers: Blob[] = [];
+    http.get('/api/file', { responseType: 'blob' }).subscribe(answer => answers.push(answer));
+    controller.expectOne('/api/file').flush(new Blob(['{"code":"human-verification-required"}']), {
+      status: 428,
+      statusText: 'Precondition Required',
+      headers: { [GATE_REFUSAL_HEADER]: 'human-verification-required' }
+    });
+    controller.expectOne('/api/file').flush(new Blob(['the file']));
+    controller.verify();
+    expect(answers.length).toBe(1);
   });
 
   // A 428 of the application's own (a conditional request, say) is its business, not the gateway's

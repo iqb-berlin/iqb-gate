@@ -207,7 +207,8 @@ It finds the provider's keys through its discovery document (or `jwksUri`), keep
 them again for an unknown key id; it accepts asymmetric signatures only (no `none`, no shared
 secrets) and checks the issuer, the expiry (a token without one is refused), that it is an access
 token -- Keycloak's `typ`, the header type, and no claim only ID tokens carry (`at_hash`, `c_hash`,
-`s_hash`) -- and, when given, that the client is named in `aud` or as `azp`, and the `audience`.
+`s_hash`) -- that the client is named in `aud` or as `azp`, and, when given, the `audience`.
+`clientId` is required: without it, a token the provider issued to any other client would hold.
 With a provider other than Keycloak, configure `audience` (the API's own): its ID tokens name the
 client in `aud` as well, and the hashes are optional in the code flow, so `clientId` alone cannot
 always tell an ID token from an access token. `identity` holds issuer, subject, a username (`preferred_username`, else
@@ -325,7 +326,9 @@ The browser logs in with the code flow and PKCE (`IqbOidcService.login()`), keep
 renews them with the refresh token; at the start of the application it takes over a login it comes
 back from (`?code=&state=`), and starts logged out should the provider fail or not answer within
 10 seconds. Each API URL has to end with `/`, so that the token cannot leak to a host that only
-begins alike.
+begins alike. The default scope (`openid profile email`) asks for no `offline_access`: Keycloak's
+refresh token then ends with the login session. A provider that hands out a refresh token only for
+`offline_access` (Auth0, Microsoft Entra ID) needs it named in `scope`.
 
 When an API refuses the token a request carried, the session is renewed once -- one renewal for all
 requests refused at once -- and the request repeated. Should that not help, the browser goes to the

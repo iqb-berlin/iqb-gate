@@ -1,17 +1,19 @@
 import {
-  createRemoteJWKSet, decodeProtectedHeader, errors, type JWTPayload, jwtVerify, type JWTVerifyGetKey
+  decodeProtectedHeader, errors, type JWTPayload, jwtVerify, type JWTVerifyGetKey
 } from 'jose';
 import { identityOf, type OidcIdentity } from './identity.js';
+import { ProviderKeys } from './provider-keys.js';
 
 export interface OidcVerifierOptions {
   /** The provider's issuer, as in its tokens, e.g. `https://login.example.org/realms/iqb`. */
   issuer: string;
   /**
-   * The client the tokens have to be for: named in `aud` or as `azp`. Also selects the client's
-   * roles. An ID token names the client in `aud` as well: with a provider that does not say in the
-   * token what it is (Keycloak does, in `typ`), configure {@link audience} too.
+   * The client the tokens have to be for: named in `aud` or as `azp` -- required, as without it the
+   * token of any other client of the provider would hold. Also selects the client's roles. An ID
+   * token names the client in `aud` as well: with a provider that does not say in the token what it
+   * is (Keycloak does, in `typ`), configure {@link audience} too.
    */
-  clientId?: string;
+  clientId: string;
   /**
    * An audience the tokens have to name in `aud`, checked strictly -- the API's own audience, which
    * an ID token never names.
@@ -51,9 +53,6 @@ const DISCOVERY_TIMEOUT_MS = 5000;
 /** How long a failed discovery stands before it is tried again -- not with every token. */
 const DISCOVERY_RETRY_MS = 30 * 1000;
 
-/** How the provider's keys are kept: refetched at most every 10 minutes, or for an unknown key id. */
-const KEY_SET_OPTIONS = { cacheMaxAge: 10 * 60 * 1000, cooldownDuration: 30 * 1000, timeoutDuration: 5000 };
-
 /** A refusal of the token itself. */
 class TokenRejected extends Error {}
 
@@ -84,11 +83,15 @@ const withoutTrailingSlash = (issuer: string): string => issuer.replace(/\/+$/, 
  * caller: not this person.
  */
 export class OidcVerifier {
-  private keySet: Promise<JWTVerifyGetKey> | null = null;
+  private keySet: Promise<ProviderKeys> | null = null;
   private keySetFailedAt = 0;
   private readonly issuer: string;
 
   constructor(private readonly options: OidcVerifierOptions) {
+    // For callers without types: a missing client would let every client's token through
+    if (typeof options.clientId !== 'string' || options.clientId === '') {
+      throw new Error('OidcVerifier needs the clientId the tokens have to be for.');
+    }
     this.issuer = withoutTrailingSlash(options.issuer);
   }
 
@@ -135,7 +138,6 @@ export class OidcVerifier {
   /** The client has to be named in `aud` or be the authorised party, as Keycloak puts it. */
   private checkClient(payload: JWTPayload): void {
     const { clientId } = this.options;
-    if (!clientId) return;
     const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
     if (payload.azp !== clientId && !audiences.includes(clientId)) {
       throw new TokenRejected(`the token is not for the client ${clientId}`);
@@ -143,8 +145,9 @@ export class OidcVerifier {
   }
 
   /**
-   * The provider's keys. A failed discovery stands for {@link DISCOVERY_RETRY_MS}: while the
-   * provider is down, not every token sends another request after it.
+   * The provider's keys, kept by {@link ProviderKeys}. A failed discovery stands for
+   * {@link DISCOVERY_RETRY_MS}: while the provider is down, not every token sends another request
+   * after it.
    */
   private keys(): Promise<JWTVerifyGetKey> {
     if (this.keySet && this.keySetFailedAt && Date.now() - this.keySetFailedAt >= DISCOVERY_RETRY_MS) {
@@ -153,16 +156,16 @@ export class OidcVerifier {
     if (!this.keySet) {
       this.keySetFailedAt = 0;
       const keySet = this.jwksUri()
-        .then(uri => createRemoteJWKSet(new URL(uri), KEY_SET_OPTIONS))
+        .then(uri => new ProviderKeys(uri, reason => this.options.onUnavailable?.(reason)))
         .catch((error: unknown) => {
           this.keySetFailedAt = Date.now();
           throw error instanceof ProviderUnavailable ? error : new ProviderUnavailable(String(error));
         });
       this.keySet = keySet;
     }
-    return this.keySet.then(getKey => async (header, input) => {
+    return this.keySet.then(keys => async (header, input) => {
       try {
-        return await getKey(header, input);
+        return await keys.getKey(header, input);
       } catch (error) {
         // No key, or several, for the token's key id is the token's fault; keys that cannot be
         // fetched are the provider's

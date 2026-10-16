@@ -130,7 +130,7 @@ describe('OidcAuthGuard', () => {
   });
 
   it('refuses what is no HTTP request, instead of failing on it', async () => {
-    const guard = new OidcAuthGuard(new OidcVerifier({ issuer: provider.issuer }), null);
+    const guard = new OidcAuthGuard(new OidcVerifier({ issuer: provider.issuer, clientId: 'studio' }), null);
     const graphql = createMock<ExecutionContext>({ getType: () => 'graphql' });
     await expect(guard.canActivate(graphql)).rejects.toBeInstanceOf(UnauthorizedException);
   });

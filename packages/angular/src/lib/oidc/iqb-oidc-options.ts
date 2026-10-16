@@ -11,6 +11,10 @@ export interface IqbOidcOptions {
    * so that `https://studio.example.org/` cannot match `https://studio.example.org.attacker.net`.
    */
   apiUrls: string[];
+  /**
+   * `openid profile email` by default. A provider that hands out a refresh token only for
+   * `offline_access` (Auth0, Microsoft Entra ID) needs it named here; Keycloak does not.
+   */
   scope?: string;
   /** Where the provider sends the browser back after the login; the application's origin by default. */
   redirectUrl?: string;

@@ -1,4 +1,5 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { GATE_REFUSAL_HEADER } from '@iqb/gate-protocol';
 import { gateRefusalOf, isAutomationDetected, isGateRefusal } from './gate-refusal';
 
 describe('isAutomationDetected', () => {
@@ -36,5 +37,30 @@ describe('gateRefusalOf and isGateRefusal', () => {
     expect(isGateRefusal(new Error('428'))).toBe(false);
     expect(gateRefusalOf(new HttpErrorResponse({ status: 428, error: { message: 'If-Match missing' } }))).toBeNull();
     expect(gateRefusalOf(new HttpErrorResponse({ status: 428 }))).toBeNull();
+  });
+});
+
+describe('the refusal named in a header', () => {
+  const naming = (code: string) => new HttpHeaders({ [GATE_REFUSAL_HEADER]: code });
+
+  it('should be recognised where the body is no JSON: a download as a Blob, a HEAD request', () => {
+    const download = new HttpErrorResponse({
+      status: 428, error: new Blob(['{}']), headers: naming('human-verification-required')
+    });
+    const head = new HttpErrorResponse({ status: 403, error: null, headers: naming('automation-detected') });
+    const text = new HttpErrorResponse({
+      status: 428, error: '{"code":', headers: naming('human-verification-required')
+    });
+
+    expect(gateRefusalOf(download)).toBe('not-verified');
+    expect(gateRefusalOf(head)).toBe('automation-detected');
+    expect(gateRefusalOf(text)).toBe('not-verified');
+  });
+
+  it('should count only with the status that goes with it', () => {
+    expect(gateRefusalOf(new HttpErrorResponse({ status: 500, headers: naming('human-verification-required') })))
+      .toBeNull();
+    expect(gateRefusalOf(new HttpErrorResponse({ status: 403, headers: naming('human-verification-required') })))
+      .toBeNull();
   });
 });

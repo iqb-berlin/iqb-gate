@@ -14,6 +14,8 @@ type PrivateKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 export class FakeProvider {
   issuer = '';
   jwksFetches = 0;
+  /** While set, the keys cannot be fetched: their address answers 503 (and counts the attempt). */
+  keysDown = false;
   /** What the discovery document says the issuer is; the real one unless a test changes it. */
   announcedIssuer: string | null = null;
   private server: Server | null = null;
@@ -32,6 +34,10 @@ export class FakeProvider {
       }
       if (request.url === '/realms/iqb/protocol/openid-connect/certs') {
         this.jwksFetches += 1;
+        if (this.keysDown) {
+          response.writeHead(503).end();
+          return;
+        }
         response.writeHead(200, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ keys: this.keys.map(key => key.publicJwk) }));
         return;

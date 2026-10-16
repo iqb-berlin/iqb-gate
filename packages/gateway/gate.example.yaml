@@ -87,4 +87,4 @@ pageGate:
 # lets a write through or keeps it out because of a token; the application decides that.
 # oidc:
 #   issuer: https://login.example.org/realms/iqb
-#   clientId: studio
+#   clientId: studio            # required: the client the tokens have to be for

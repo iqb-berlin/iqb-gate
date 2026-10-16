@@ -13,6 +13,12 @@ import { IqbOidcLoginGuard } from './iqb-oidc-login-guard';
 /** Seconds before its expiry a token is renewed, so that no request goes out with an expiring one. */
 const RENEW_BEFORE_EXPIRY_SECONDS = 30;
 
+/**
+ * Without `offline_access`: Keycloak then ties the refresh token to the login session, instead of
+ * an offline token in the browser's storage that outlives the logout and the session's end.
+ */
+const DEFAULT_SCOPE = 'openid profile email';
+
 /** How long the start of the application waits for the provider before it starts logged out. */
 const CHECK_AUTH_TIMEOUT_MS = 10 * 1000;
 
@@ -57,7 +63,7 @@ export function provideIqbOidc(options: IqbOidcOptions): EnvironmentProviders {
           return new StsConfigStaticLoader({
             authority: options.issuer,
             clientId: options.clientId,
-            scope: options.scope ?? 'openid profile email offline_access',
+            scope: options.scope ?? DEFAULT_SCOPE,
             responseType: 'code',
             redirectUrl: options.redirectUrl ?? origin,
             postLogoutRedirectUri: options.postLogoutRedirectUrl ?? origin,

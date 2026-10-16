@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   AUTOMATION_DETECTED_CODE,
   AUTOMATION_DETECTED_STATUS,
+  GATE_REFUSAL_HEADER,
   HUMAN_VERIFICATION_REQUIRED_CODE,
   HUMAN_VERIFICATION_REQUIRED_STATUS
 } from '@iqb/gate-protocol';
@@ -21,15 +22,20 @@ export function isAutomationDetected(error: unknown): boolean {
 }
 
 /**
- * Whether the gateway asks for the challenge -- its 428 names itself in the body, so that a 428 of
- * the application's own is left to the application.
+ * Whether the gateway asks for the challenge -- its 428 names itself in a header and in the body, so
+ * that a 428 of the application's own is left to the application.
  */
 export function isVerificationRequired(error: unknown): boolean {
   return isGateAnswer(error, HUMAN_VERIFICATION_REQUIRED_STATUS, HUMAN_VERIFICATION_REQUIRED_CODE);
 }
 
+/**
+ * The header names the refusal whatever the body is (none for HEAD, a Blob for a download); the
+ * body alone names it from a gateway before the header.
+ */
 function isGateAnswer(error: unknown, status: number, code: string): boolean {
   if (!(error instanceof HttpErrorResponse) || error.status !== status) return false;
+  if (error.headers.get(GATE_REFUSAL_HEADER) === code) return true;
   const body: unknown = error.error;
   return typeof body === 'object' && body !== null && (body as { code?: unknown }).code === code;
 }

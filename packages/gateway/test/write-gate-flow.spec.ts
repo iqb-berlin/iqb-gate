@@ -495,7 +495,7 @@ describe('the write gate closing', () => {
     const file = join(directory, 'audit.sqlite');
     const gateway = await buildGateway(testConfig(origin(upstream.address() as AddressInfo), {
       writeGate: { enforce: true, burst: { limit: 30, windowSeconds: 60 }, userClaim: 'sub', ...STUDIO_LITE_RULES },
-      oidc: { issuer: `http://127.0.0.1:${(slow.address() as AddressInfo).port}/realms/iqb` },
+      oidc: { issuer: `http://127.0.0.1:${(slow.address() as AddressInfo).port}/realms/iqb`, clientId: 'studio' },
       audit: { file, retentionDays: 90, key: undefined }
     }), false);
 

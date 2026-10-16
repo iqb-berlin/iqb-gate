@@ -1,5 +1,5 @@
 import {
-  Component, CUSTOM_ELEMENTS_SCHEMA, inject, OnDestroy, OnInit, signal
+  Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject, OnDestroy, OnInit, signal
 } from '@angular/core';
 import {
   MatDialogActions, MatDialogContent, MatDialogRef, MatDialogTitle
@@ -44,12 +44,12 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
   readonly failed = signal(false);
   /** No challenge, or no widget, could be loaded; the person can try again instead of losing the write. */
   readonly loadFailed = signal(false);
+  private readonly widgetLoadFailures = signal(0);
   /**
-   * The widget failed to load more than once: a browser that keeps a failed module fetch rejects
-   * every further try at once, and only a reload of the page helps.
+   * The widget failed to load more than once, and has not loaded since: a browser that keeps a failed
+   * module fetch rejects every further try at once, and only a reload of the page helps.
    */
-  readonly reloadNeeded = signal(false);
-  private widgetLoadFailures = 0;
+  readonly reloadNeeded = computed(() => !this.widgetReady() && this.widgetLoadFailures() > 1);
   private ngUnsubscribe = new Subject<void>();
 
   ngOnInit(): void {
@@ -71,8 +71,7 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
         this.widgetReady.set(true);
       },
       () => {
-        this.widgetLoadFailures += 1;
-        this.reloadNeeded.set(this.widgetLoadFailures > 1);
+        this.widgetLoadFailures.update(failures => failures + 1);
         this.loadFailed.set(true);
       }
     );

@@ -2,7 +2,7 @@ import { createMock } from '@golevelup/ts-jest';
 import {
   type EnvironmentProviders, type Provider, provideZonelessChangeDetection
 } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { of } from 'rxjs';
 import { GateVerificationDialogComponent } from './gate-verification-dialog.component';
@@ -15,18 +15,23 @@ jest.mock('altcha', () => {
   if (mockWidgetUnavailable) throw new Error('ChunkLoadError');
   return {};
 });
+/** Whether the gateway hands out no challenge, as when it cannot be reached. */
+let mockChallengeUnavailable = false;
 
 describe('GateVerificationDialogComponent, loading the widget', () => {
   const challenge = { parameters: { algorithm: 'PBKDF2/SHA-256' }, signature: 'sig' };
 
   /** The dialog, drawn by hand -- or, without zone.js, only by what Angular schedules itself. */
   const createDialog = async (providers: Array<Provider | EnvironmentProviders> = [], zoneless = false) => {
+    const challengeService = createMock<GateChallengeService>();
+    challengeService.challenge.mockImplementation(() => of(mockChallengeUnavailable ? null : challenge));
+    challengeService.verify.mockReturnValue(of(true));
     globalThis.$altcha = createMock<typeof globalThis.$altcha>({ i18n: { set: jest.fn() } });
     await TestBed.configureTestingModule({
       imports: [GateVerificationDialogComponent],
       providers: [
         ...providers,
-        { provide: GateChallengeService, useValue: { challenge: () => of(challenge), verify: () => of(true) } },
+        { provide: GateChallengeService, useValue: challengeService },
         { provide: MatDialogRef, useValue: { close: jest.fn() } }
       ]
     }).compileComponents();
@@ -44,8 +49,16 @@ describe('GateVerificationDialogComponent, loading the widget', () => {
     return fixture;
   };
 
+  /** The person clicks "try again", and the dialog settles. */
+  const retry = async (fixture: ComponentFixture<GateVerificationDialogComponent>) => {
+    fixture.nativeElement.querySelector('[data-cy="human-verification-retry"]').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
   afterEach(() => {
     mockWidgetUnavailable = false;
+    mockChallengeUnavailable = false;
   });
 
   it('should load the widget again when the person tries again', async () => {
@@ -55,9 +68,7 @@ describe('GateVerificationDialogComponent, loading the widget', () => {
     expect(fixture.nativeElement.querySelector('altcha-widget')).toBeNull();
 
     mockWidgetUnavailable = false;
-    fixture.nativeElement.querySelector('[data-cy="human-verification-retry"]').click();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await retry(fixture);
 
     expect(fixture.componentInstance.loadFailed()).toBe(false);
     expect(fixture.nativeElement.querySelector('altcha-widget')).not.toBeNull();
@@ -71,13 +82,36 @@ describe('GateVerificationDialogComponent, loading the widget', () => {
     const fixture = await createDialog();
     expect(fixture.nativeElement.textContent).not.toContain(DEFAULT_GATE_TEXTS.reloadNeeded);
 
-    fixture.nativeElement.querySelector('[data-cy="human-verification-retry"]').click();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await retry(fixture);
 
     expect(fixture.componentInstance.loadFailed()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain(DEFAULT_GATE_TEXTS.reloadNeeded);
     expect(fixture.nativeElement.querySelector('[data-cy="human-verification-retry"]')).not.toBeNull();
+  });
+
+  it('should no longer ask for a reload once the widget has loaded after all', async () => {
+    jest.resetModules();
+    mockWidgetUnavailable = true;
+    const fixture = await createDialog();
+    await retry(fixture);
+    expect(fixture.componentInstance.reloadNeeded()).toBe(true);
+
+    // The widget loads after all, but the gateway hands out no challenge this time
+    mockWidgetUnavailable = false;
+    mockChallengeUnavailable = true;
+    await retry(fixture);
+
+    expect(fixture.componentInstance.loadFailed()).toBe(true);
+    expect(fixture.nativeElement.querySelector('altcha-widget')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(DEFAULT_GATE_TEXTS.loadFailed);
+    expect(fixture.nativeElement.textContent).not.toContain(DEFAULT_GATE_TEXTS.reloadNeeded);
+
+    // Trying again is all it takes
+    mockChallengeUnavailable = false;
+    await retry(fixture);
+
+    expect(fixture.componentInstance.loadFailed()).toBe(false);
+    expect(fixture.nativeElement.querySelector('altcha-widget')).not.toBeNull();
   });
 
   // Angular 21 creates applications without zone.js

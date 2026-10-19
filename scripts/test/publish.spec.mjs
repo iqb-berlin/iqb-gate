@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { PUBLISHED, publishCommands, publishProblems } from '../publish.mjs';
+import {
+  BUILD_CONFIGS, mapsWithoutSources, PUBLISHED, publishCommands, publishProblems
+} from '../publish.mjs';
+import { ROOT } from '../manifests.mjs';
 
 const released = version => PUBLISHED.map(name => ({ name, version }));
 
@@ -33,11 +40,60 @@ describe('publishProblems', () => {
 
   it('reports a range between the packages that misses the version', () => {
     const manifests = released('0.1.0').map(manifest => (manifest.name === '@iqb/gate-oidc'
-      ? { ...manifest, dependencies: { '@iqb/gate-protocol': '^0.0.0', jose: '6.2.12' } }
+      ? { ...manifest, dependencies: { '@iqb/gate-protocol': '^0.0.0', jose: '^6.2.12' } }
       : { ...manifest, peerDependencies: { '@iqb/gate-protocol': '^0.1.0' } }));
     assert.deepEqual(publishProblems(manifests, ''), [
       '@iqb/gate-oidc depends on @iqb/gate-protocol ^0.0.0, not ^0.1.0: npm run version:set -- <version>'
     ]);
+  });
+
+  // A library that pins a dependency forces a copy of its own on every application that uses another version
+  it('reports a dependency pinned to one version, in any form, except the ALTCHA widget', () => {
+    const angular = {
+      name: '@iqb/gate-angular',
+      version: '0.1.0',
+      dependencies: { 'angular-auth-oidc-client': '22.0.1', tslib: '^2.8.1', altcha: '3.3.0', a: 'v1.2.3' },
+      peerDependencies: { rxjs: '7.8.1', '@angular/core': '>=20.0.0 <22.0.0', b: '1.x', c: '~1.2.0 || ^2' },
+      optionalDependencies: { d: 'npm:d@1.2.3', e: '*' }
+    };
+    const manifests = [...released('0.1.0').filter(manifest => manifest.name !== angular.name), angular, angular];
+    assert.deepEqual(publishProblems(manifests, ''), ['angular-auth-oidc-client to 22.0.1', 'a to v1.2.3',
+      'rxjs to 7.8.1', 'd to npm:d@1.2.3']
+      .map(pin => `@iqb/gate-angular pins ${pin}: a library depends on a range, such as ^`));
+  });
+});
+
+describe('mapsWithoutSources', () => {
+  it('reports the source maps that point at sources which are not published', () => {
+    const dist = mkdtempSync(join(tmpdir(), 'maps-'));
+    try {
+      mkdirSync(join(dist, 'cjs'));
+      const carrying = { sources: ['../src/index.ts'], sourcesContent: ['x'] };
+      writeFileSync(join(dist, 'index.js.map'), JSON.stringify(carrying));
+      writeFileSync(join(dist, 'cjs', 'index.js.map'), JSON.stringify({ sources: ['../../src/index.ts'] }));
+      writeFileSync(join(dist, 'index.js'), '');
+      writeFileSync(join(dist, 'cut.js.map'), '');
+      assert.deepEqual(mapsWithoutSources([dist, join(dist, 'missing')]).sort(), [
+        `${dist}/cjs/index.js.map does not carry its sources`,
+        `${dist}/cut.js.map is no source map`
+      ]);
+    } finally {
+      rmSync(dist, { recursive: true });
+    }
+  });
+});
+
+describe('the builds of the Node packages', () => {
+  // Their maps point at src/, which is not published
+  it('write source maps that carry their sources', () => {
+    BUILD_CONFIGS.forEach(config => {
+      const { compilerOptions } = JSON.parse(execFileSync(
+        `${ROOT}node_modules/.bin/tsc`,
+        ['-p', `${ROOT}${config}`, '--showConfig'],
+        { encoding: 'utf8' }
+      ));
+      assert.ok(!compilerOptions.sourceMap || compilerOptions.inlineSources, config);
+    });
   });
 });
 

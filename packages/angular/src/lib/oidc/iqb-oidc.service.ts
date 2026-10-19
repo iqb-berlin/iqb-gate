@@ -1,10 +1,10 @@
 import { inject, Injectable } from '@angular/core';
 import { OidcSecurityService } from 'angular-auth-oidc-client';
 import {
-  catchError, combineLatest, distinctUntilChanged, map, type Observable, of, switchMap
+  catchError, combineLatest, distinctUntilChanged, finalize, map, type Observable, of, switchMap
 } from 'rxjs';
 import { IQB_OIDC_OPTIONS } from './iqb-oidc-options';
-import { identityOfClaims, type IqbOidcIdentity } from '../utils/identity-of-claims';
+import { identityOfClaims, type IqbOidcIdentity, sameIdentity } from '../utils/identity-of-claims';
 
 /**
  * The login as the application sees it, without the OpenID Connect library's vocabulary: whether
@@ -27,13 +27,18 @@ export class IqbOidcService {
     distinctUntilChanged()
   );
 
-  readonly identity$: Observable<IqbOidcIdentity | null> = this.isAuthenticated$.pipe(
-    switchMap(authenticated => (authenticated
+  /**
+   * Read again with every renewal of the token, which may bring roles granted or withdrawn
+   * meanwhile; reports only what changed.
+   */
+  readonly identity$: Observable<IqbOidcIdentity | null> = this.oidc.isAuthenticated$.pipe(
+    switchMap(result => (result.isAuthenticated
       ? combineLatest([this.oidc.getPayloadFromIdToken(), this.oidc.getPayloadFromAccessToken()]).pipe(
         map(([idToken, accessToken]) => identityOfClaims(idToken, accessToken, this.clientId)),
         catchError(() => of(null))
       )
-      : of(null)))
+      : of(null))),
+    distinctUntilChanged(sameIdentity)
   );
 
   /** Off to the provider's login page; back at the redirect URL with a code. */
@@ -43,15 +48,15 @@ export class IqbOidcService {
 
   /**
    * Revokes the tokens and ends the session at the provider. Should the revocation fail, the
-   * tokens are dropped here all the same and the provider's session is ended: nobody stays
-   * logged in who asked to leave.
+   * provider's session is ended all the same -- named by the ID token, so the tokens stay until
+   * then. Afterwards they are dropped here in any case: the library leaves them where it cannot end
+   * the provider's session (no end-session endpoint), and nobody stays logged in who asked to leave.
    */
   logout(): void {
     this.oidc.logoffAndRevokeTokens().pipe(
-      catchError(() => {
-        this.oidc.logoffLocal();
-        return this.oidc.logoff().pipe(catchError(() => of(null)));
-      })
+      catchError(() => this.oidc.logoff()),
+      catchError(() => of(null)),
+      finalize(() => this.oidc.logoffLocal())
     ).subscribe();
   }
 }

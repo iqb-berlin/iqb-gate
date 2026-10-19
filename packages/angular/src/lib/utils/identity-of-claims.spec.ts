@@ -1,4 +1,4 @@
-import { identityOfClaims } from './identity-of-claims';
+import { identityOfClaims, sameIdentity } from './identity-of-claims';
 
 describe('identityOfClaims', () => {
   it('should fall back to the e-mail address, then the subject, for a name', () => {
@@ -19,5 +19,26 @@ describe('identityOfClaims', () => {
     };
     expect(identityOfClaims({ sub: 's1' }, accessToken, 'studio')?.roles).toEqual(['admin', 'reader', 'editor']);
     expect(identityOfClaims({ sub: 's1' }, accessToken)?.roles).toEqual(['admin', 'reader']);
+  });
+});
+
+describe('sameIdentity', () => {
+  const anna = {
+    subject: 's1', username: 'anna', email: 'anna@example.org', roles: ['admin']
+  };
+
+  it('should tell an identity that changed in any part, roles included', () => {
+    expect(sameIdentity(anna, { ...anna, roles: ['admin'] })).toBe(true);
+    expect(sameIdentity({ ...anna, roles: ['admin', 'editor'] }, { ...anna, roles: ['editor', 'admin'] })).toBe(true);
+    expect(sameIdentity(anna, { ...anna, roles: ['admin', 'editor'] })).toBe(false);
+    expect(sameIdentity(anna, { ...anna, email: null })).toBe(false);
+    expect(sameIdentity(anna, { ...anna, username: 'anna.a' })).toBe(false);
+    expect(sameIdentity(anna, { ...anna, subject: 's2' })).toBe(false);
+  });
+
+  it('should take nobody for nobody only', () => {
+    expect(sameIdentity(null, null)).toBe(true);
+    expect(sameIdentity(anna, null)).toBe(false);
+    expect(sameIdentity(null, anna)).toBe(false);
   });
 });

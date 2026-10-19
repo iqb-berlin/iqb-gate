@@ -23,4 +23,14 @@ describe('checkApiUrls', () => {
     expect(() => checkApiUrls(['https://*.example.org/api/'])).toThrow(/no wildcard/);
     expect(() => checkApiUrls([])).toThrow(/names no API/);
   });
+
+  // `/` matches `//attacker.net/x` as well -- and `/\attacker.net/x`, which browsers read alike
+  it('should refuse prefixes that match the address of another host', () => {
+    [
+      '/', '//attacker.net/', '/\\attacker.net/', '/\t/attacker.net/', '/\n/attacker.net/', 'https:/attacker.net/',
+      'https://user@attacker.net/', 'api/', 'ftp://studio.example.org/'
+    ].forEach(url => expect(() => checkApiUrls([url])).toThrow(/path from the root or an http\(s\) URL/));
+    expect(() => checkApiUrls(['/api/', 'https://studio.example.org/api/', 'https://Studio.example.org:443/']))
+      .not.toThrow();
+  });
 });

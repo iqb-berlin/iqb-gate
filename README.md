@@ -334,8 +334,9 @@ provideHttpClient(withInterceptors([...iqbOidcInterceptors(), iqbGateInterceptor
 The browser logs in with the code flow and PKCE (`IqbOidcService.login()`), keeps the tokens and
 renews them with the refresh token; at the start of the application it takes over a login it comes
 back from (`?code=&state=`), and starts logged out should the provider fail or not answer within
-10 seconds. Each API URL has to end with `/`, so that the token cannot leak to a host that only
-begins alike. The default scope (`openid profile email`) asks for no `offline_access`: Keycloak's
+10 seconds. Each API URL is a path from the root (`/api/`, not `/` alone, which matches
+`//another.host/` as well) or an http(s) URL, and ends with `/`, so that the token cannot leak to a
+host that only begins alike. The default scope (`openid profile email`) asks for no `offline_access`: Keycloak's
 refresh token then ends with the login session. A provider that hands out a refresh token only for
 `offline_access` (Auth0, Microsoft Entra ID) needs it named in `scope`.
 

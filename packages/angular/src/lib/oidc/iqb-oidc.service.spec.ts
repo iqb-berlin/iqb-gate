@@ -57,6 +57,17 @@ describe('IqbOidcService', () => {
     });
   });
 
+  // The library reports every renewal; a role granted meanwhile comes with the renewed token
+  it('should report roles that change with a renewal of the token, and nothing for an unchanged one', () => {
+    const roles: string[][] = [];
+    service.identity$.subscribe(identity => roles.push(identity?.roles ?? []));
+    oidc.isAuthenticated$.next({ isAuthenticated: true });
+    oidc.getPayloadFromAccessToken.mockReturnValue(of({ sub: 's1', realm_access: { roles: ['admin', 'editor'] } }));
+    oidc.isAuthenticated$.next({ isAuthenticated: true });
+    oidc.isAuthenticated$.next({ isAuthenticated: true });
+    expect(roles).toEqual([[], ['admin'], ['admin', 'editor']]);
+  });
+
   it('should add the roles of the configured client', async () => {
     oidc.getPayloadFromAccessToken.mockReturnValue(of({
       sub: 's1', realm_access: { roles: ['admin'] }, resource_access: { studio: { roles: ['editor'] } }
@@ -81,13 +92,27 @@ describe('IqbOidcService', () => {
     expect(oidc.authorize).toHaveBeenCalled();
     service.logout();
     expect(oidc.logoffAndRevokeTokens).toHaveBeenCalled();
-    expect(oidc.logoffLocal).not.toHaveBeenCalled();
+    expect(oidc.logoffAndRevokeTokens.mock.invocationCallOrder[0])
+      .toBeLessThan(oidc.logoffLocal.mock.invocationCallOrder[0]);
   });
 
-  it('should log out all the same when the tokens cannot be revoked', () => {
+  // logoff() names the session by the ID token; dropped before, the provider would keep the session
+  it('should end the provider\'s session all the same when the tokens cannot be revoked', () => {
     oidc.logoffAndRevokeTokens.mockReturnValue(throwError(() => new Error('revocation failed')));
     service.logout();
-    expect(oidc.logoffLocal).toHaveBeenCalled();
     expect(oidc.logoff).toHaveBeenCalled();
+    expect(oidc.logoff.mock.invocationCallOrder[0]).toBeLessThan(oidc.logoffLocal.mock.invocationCallOrder[0]);
+  });
+
+  // Without an end-session endpoint the library's logoff() answers null and leaves the tokens
+  it('should drop the tokens here when the provider\'s session cannot be ended', () => {
+    oidc.logoffAndRevokeTokens.mockReturnValue(throwError(() => new Error('revocation failed')));
+    oidc.logoff.mockReturnValue(of(null));
+    service.logout();
+    expect(oidc.logoffLocal).toHaveBeenCalled();
+    oidc.logoffLocal.mockClear();
+    oidc.logoff.mockReturnValue(throwError(() => new Error('no configuration')));
+    service.logout();
+    expect(oidc.logoffLocal).toHaveBeenCalled();
   });
 });

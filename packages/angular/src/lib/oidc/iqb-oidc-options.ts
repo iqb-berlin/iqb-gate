@@ -7,8 +7,10 @@ export interface IqbOidcOptions {
   /** The application's client at the provider: public, with the code flow and PKCE. */
   clientId: string;
   /**
-   * Requests below these URLs carry the access token; no other request does. Each ends with `/`,
-   * so that `https://studio.example.org/` cannot match `https://studio.example.org.attacker.net`.
+   * Requests below these URLs carry the access token; no other request does. Each is a path from
+   * the root (`/api/`) or an http(s) URL, and ends with `/`, so that `https://studio.example.org/`
+   * cannot match `https://studio.example.org.attacker.net`. `/` alone is refused: it matches
+   * `//attacker.net/`, another host.
    */
   apiUrls: string[];
   /**
@@ -30,12 +32,24 @@ export const IQB_OIDC_OPTIONS = new InjectionToken<IqbOidcOptions>('IQB_OIDC_OPT
  */
 export const IQB_OIDC_OWN_UNAUTHORIZED = new HttpContextToken<boolean>(() => false);
 
-/** Refuses API URLs a token could leak through: without a closing `/`, or with a wildcard. */
+/**
+ * Whether a prefix matches addresses of one host only: a path from the root that `//` cannot begin,
+ * or an http(s) URL with a host and a path. Browsers read `\` as `/` and drop tabs and line breaks
+ * from a URL (`/\t/attacker.net/` is `//attacker.net/`): neither may appear at all.
+ */
+function isOneHost(url: string): boolean {
+  const control = [...url].some(char => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
+  if (control || /[\s\\]/.test(url)) return false;
+  return /^\/[^/]/.test(url) || /^https?:\/\/[^/?#@]+\//i.test(url);
+}
+
+/** Refuses API URLs a token could leak through: of another host, without a closing `/`, with a wildcard. */
 export function checkApiUrls(apiUrls: string[]): void {
   if (!apiUrls.length) throw new Error('provideIqbOidc: apiUrls names no API.');
-  const unsafe = apiUrls.filter(url => !url.endsWith('/') || url.includes('*'));
+  const unsafe = apiUrls.filter(url => !isOneHost(url) || !url.endsWith('/') || url.includes('*'));
   if (unsafe.length) {
-    throw new Error(`provideIqbOidc: an API URL has to end with "/" and name no wildcard: ${unsafe.join(', ')}`);
+    throw new Error('provideIqbOidc: an API URL has to be a path from the root or an http(s) URL, ' +
+      `has to end with "/" and name no wildcard: ${unsafe.join(', ')}`);
   }
 }
 

@@ -15,6 +15,16 @@ export interface IqbOidcIdentity {
 }
 
 /**
+ * Whether two identities are the same in every part the application sees, the roles included --
+ * in whatever order the provider lists them.
+ */
+export function sameIdentity(a: IqbOidcIdentity | null, b: IqbOidcIdentity | null): boolean {
+  if (!a || !b) return a === b;
+  return a.subject === b.subject && a.username === b.username && a.email === b.email &&
+    a.roles.length === b.roles.length && a.roles.every(role => b.roles.includes(role));
+}
+
+/**
  * The identity of an ID token's claims, with the roles of the access token's; `null` without a
  * subject. Names and roles follow the rule the backends verify tokens by (`@iqb/gate-protocol`).
  */

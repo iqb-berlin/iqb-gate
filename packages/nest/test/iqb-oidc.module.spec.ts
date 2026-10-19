@@ -12,6 +12,8 @@ import {
 } from '../src/index.js';
 import { OIDC_USER_SYNC } from '../src/tokens.js';
 
+const anna = { status: 'verified', identity: { username: 'anna' } };
+
 describe('IqbOidcModule', () => {
   const provider = new FakeProvider();
   const userSync: OidcUserSync = { sync: identity => ({ name: identity.username }) };
@@ -27,8 +29,8 @@ describe('IqbOidcModule', () => {
     const moduleRef = await compile([IqbOidcModule.forRoot({ issuer: provider.issuer, clientId: 'studio' })]);
     const verifier = moduleRef.get<OidcVerifier>(OIDC_VERIFIER);
     expect(verifier).toBeInstanceOf(OidcVerifier);
-    expect((await verifier.verify(await provider.sign()))?.username).toBe('anna');
-    expect(await verifier.verify(await provider.sign({ azp: 'coding-box' }))).toBeNull();
+    expect(await verifier.verify(await provider.sign())).toMatchObject(anna);
+    expect((await verifier.verify(await provider.sign({ azp: 'coding-box' }))).status).toBe('rejected');
     await moduleRef.close();
   });
 
@@ -57,7 +59,7 @@ describe('IqbOidcModule', () => {
       inject: [OidcSettingsSource],
       useFactory: (source: OidcSettingsSource) => source.settings()
     })]);
-    expect((await moduleRef.get<OidcVerifier>(OIDC_VERIFIER).verify(await provider.sign()))?.username).toBe('anna');
+    expect(await moduleRef.get<OidcVerifier>(OIDC_VERIFIER).verify(await provider.sign())).toMatchObject(anna);
     expect(moduleRef.get(OIDC_USER_SYNC)).toBe(userSync);
     await moduleRef.close();
   });
@@ -89,10 +91,10 @@ describe('IqbOidcModule', () => {
     const moduleRef = await compile([IqbOidcModule.forRoot({ issuer: provider.issuer, clientId: 'studio' })]);
     const verifier = moduleRef.get<OidcVerifier>(OIDC_VERIFIER);
     try {
-      expect(await verifier.verify(await provider.sign())).not.toBeNull();
+      expect((await verifier.verify(await provider.sign())).status).toBe('verified');
       provider.keysAnswer = 503;
       vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 11 * 60 * 1000 });
-      expect(await verifier.verify(await provider.sign())).not.toBeNull();
+      expect((await verifier.verify(await provider.sign())).status).toBe('verified');
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('keys are not current'));
     } finally {
       vi.useRealTimers();

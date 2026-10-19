@@ -200,7 +200,9 @@ backends:
 
 ```typescript
 const verifier = new OidcVerifier({ issuer: 'https://login.example.org/realms/iqb', clientId: 'studio' });
-const identity = await verifier.verify(token); // OidcIdentity, or null for any token that does not hold
+const verification = await verifier.verify(token);
+// { status: 'verified', identity }, { status: 'rejected', reason } for a token that does not hold,
+// or { status: 'unavailable', reason } while the provider cannot be asked
 ```
 
 It finds the provider's keys through its discovery document (or `jwksUri`) and keeps them: after
@@ -216,8 +218,9 @@ token -- Keycloak's `typ`, the header type, and no claim only ID tokens carry (`
 With a provider other than Keycloak, configure `audience` (the API's own): its ID tokens name the
 client in `aud` as well, and the hashes are optional in the code flow, so `clientId` alone cannot
 always tell an ID token from an access token. `identity` holds issuer, subject, a username (`preferred_username`, else
-e-mail, else subject), e-mail, names and roles (Keycloak's realm and client roles). It never throws
-for a bad token; `onRejected` hears why.
+e-mail, else subject), e-mail, names and roles (Keycloak's realm and client roles). It never throws;
+`onRejected` hears why a token was refused, `onUnavailable` why the provider could not be asked --
+an outage, which an API answers with 503, not 401: a 401 sends the browser to log in again.
 
 In a NestJS backend (Nest 11), `@iqb/gate-nest` does it for the routes:
 
@@ -245,7 +248,8 @@ me(@OidcIdentity() identity: OidcIdentityData, @Req() request: { user: User }) {
 
 `OidcAuthGuard` answers 401 for a request without a valid token of the provider, and 403 for a
 person the `userSync` does not take -- known, but not let in, so that the browser does not take it
-for an expired login. Alike in every module and as global guard, as the module sets both up
+for an expired login. While the provider cannot be asked (discovery or keys unreachable), it
+answers 503 for the same reason. Alike in every module and as global guard, as the module sets both up
 itself. `@OidcIdentity()` refuses a route the guard did not check. Only HTTP requests are let in.
 An application that checks further tokens of its own in one strategy (coding-box: workspace tokens)
 injects the verifier as `OIDC_VERIFIER` there. The package is CommonJS, as Nest applications are,

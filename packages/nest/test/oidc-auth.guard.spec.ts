@@ -108,6 +108,15 @@ describe('OidcAuthGuard', () => {
     expect((await read(await provider.sign(), '/protected/unguarded')).status).toBe(200);
   });
 
+  // A 401 would send the browser to log in again, and again, while the provider is down
+  it('answers 503 while the provider cannot be asked, not 401', async () => {
+    const unreachable = 'http://127.0.0.1:1/realms/iqb';
+    await start([IqbOidcModule.forRoot({ issuer: unreachable, clientId: 'studio' }), FeatureModule]);
+    expect((await read(await provider.sign({ iss: unreachable }))).status).toBe(503);
+    expect((await read(await provider.sign())).status).toBe(401);
+    expect((await read()).status).toBe(401);
+  });
+
   it('refuses a handler the identity of a route the guard did not check', async () => {
     await start([IqbOidcModule.forRoot({ issuer: provider.issuer, clientId: 'studio' }), FeatureModule]);
     expect((await read(await provider.sign(), '/protected/unguarded')).status).toBe(401);
@@ -125,7 +134,8 @@ describe('OidcAuthGuard', () => {
     }).compile();
     const strategy = moduleRef.get(OwnStrategy);
     expect(strategy.verifier).toBeInstanceOf(OidcVerifier);
-    expect((await strategy.verifier.verify(await provider.sign()))?.username).toBe('anna');
+    expect(await strategy.verifier.verify(await provider.sign()))
+      .toMatchObject({ status: 'verified', identity: { username: 'anna' } });
     await moduleRef.close();
   });
 

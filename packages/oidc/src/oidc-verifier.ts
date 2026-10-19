@@ -1,5 +1,5 @@
 import {
-  decodeProtectedHeader, errors, type JWTPayload, jwtVerify, type JWTVerifyGetKey
+  decodeJwt, decodeProtectedHeader, errors, type JWTPayload, jwtVerify, type JWTVerifyGetKey
 } from 'jose';
 import { identityOf, type OidcIdentity } from './identity.js';
 import { ProviderKeys, RETRY_PAUSE_MS } from './provider-keys.js';
@@ -56,34 +56,58 @@ const ID_TOKEN_CLAIMS = ['at_hash', 'c_hash', 's_hash'];
 
 const DISCOVERY_TIMEOUT_MS = 5000;
 
+/**
+ * What {@link OidcVerifier.verify} found: the person of a token that holds; a token refused; or a
+ * provider that cannot be asked, so that no token can be checked -- for an API, an outage to
+ * answer with 503, not a login to repeat. The `reason` is for the log: it may name the provider's
+ * internal addresses, and does not belong into an answer.
+ */
+export type OidcVerification =
+  | { status: 'verified'; identity: OidcIdentity }
+  | { status: 'rejected'; reason: string }
+  | { status: 'unavailable'; reason: string };
+
 /** A refusal of the token itself. */
 class TokenRejected extends Error {}
 
 /** The provider could not be asked. */
 class ProviderUnavailable extends Error {}
 
-/** Refuses a token whose header says it is no access token -- before its signature is checked. */
-function checkHeaderType(token: string): void {
-  let type: unknown;
+/** An issuer as compared: `.../realms/iqb/` and `.../realms/iqb` are the same provider. */
+const withoutTrailingSlash = (issuer: string): string => issuer.replace(/\/+$/, '');
+
+/**
+ * Refuses, before the provider is asked for its keys, a token that cannot be one of its access
+ * tokens: by the type and algorithm of its header and the issuer it names. While the provider is
+ * down, such a token -- an application's own, another provider's -- is refused, not taken for the
+ * outage. The signature is checked afterwards, and the issuer once more.
+ */
+function checkBeforeKeys(token: string, issuer: string): void {
+  let header: ReturnType<typeof decodeProtectedHeader>;
+  let payload: JWTPayload;
   try {
-    type = decodeProtectedHeader(token).typ;
+    header = decodeProtectedHeader(token);
+    payload = decodeJwt(token);
   } catch {
     throw new TokenRejected('the token is no JWT');
   }
-  if (type !== undefined && !ACCESS_TOKEN_HEADER_TYPES.includes(String(type).toLowerCase())) {
-    throw new TokenRejected(`the token is of the type ${String(type)}`);
+  if (header.typ !== undefined && !ACCESS_TOKEN_HEADER_TYPES.includes(String(header.typ).toLowerCase())) {
+    throw new TokenRejected(`the token is of the type ${String(header.typ)}`);
+  }
+  if (!ALGORITHMS.includes(String(header.alg))) {
+    throw new TokenRejected(`the token is signed with ${String(header.alg)}`);
+  }
+  if (typeof payload.iss !== 'string' || withoutTrailingSlash(payload.iss) !== issuer) {
+    throw new TokenRejected(`the token's issuer is ${String(payload.iss)}`);
   }
 }
-
-/** An issuer as compared: `.../realms/iqb/` and `.../realms/iqb` are the same provider. */
-const withoutTrailingSlash = (issuer: string): string => issuer.replace(/\/+$/, '');
 
 /**
  * Checks access tokens of one OpenID Connect provider: its signature against the provider's
  * published keys, the issuer, the expiry, that it is an access token where it says what it is,
  * and, where configured, the client and the audience. A token that holds yields the identity it
- * names; any other yields `null` -- nothing throws, as every refusal is the same answer to the
- * caller: not this person.
+ * names; any other is refused, and a provider that cannot be asked is told apart from a refusal --
+ * nothing throws.
  */
 export class OidcVerifier {
   private keySet: Promise<ProviderKeys> | null = null;
@@ -98,9 +122,9 @@ export class OidcVerifier {
     this.issuer = withoutTrailingSlash(options.issuer);
   }
 
-  async verify(token: string): Promise<OidcIdentity | null> {
+  async verify(token: string): Promise<OidcVerification> {
     try {
-      checkHeaderType(token);
+      checkBeforeKeys(token, this.issuer);
       const { payload } = await jwtVerify(token, await this.keys(), {
         audience: this.options.audience,
         algorithms: ALGORITHMS,
@@ -109,15 +133,15 @@ export class OidcVerifier {
         clockTolerance: this.options.clockToleranceSeconds ?? 30
       });
       this.checkClaims(payload);
-      return identityOf(payload, this.options.clientId);
+      return { status: 'verified', identity: identityOf(payload, this.options.clientId) };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       if (error instanceof ProviderUnavailable) {
         this.options.onUnavailable?.(reason, error);
-      } else {
-        this.options.onRejected?.(reason, error);
+        return { status: 'unavailable', reason };
       }
-      return null;
+      this.options.onRejected?.(reason, error);
+      return { status: 'rejected', reason };
     }
   }
 
@@ -183,12 +207,20 @@ export class OidcVerifier {
     const discovery = `${this.issuer}/.well-known/openid-configuration`;
     let response: Response;
     try {
-      response = await fetch(discovery, { signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS) });
+      response = await fetch(discovery, {
+        signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
+        // A document from wherever a redirect points could name any keys as the provider's
+        redirect: 'manual'
+      });
     } catch (error) {
       throw new ProviderUnavailable(`the discovery document at ${discovery} could not be fetched: ${error}`);
     }
     if (!response.ok) {
-      throw new ProviderUnavailable(`the discovery document at ${discovery} answered ${response.status}`);
+      await response.body?.cancel();
+      const redirect = response.status >= 300 && response.status < 400
+        ? ' -- a redirect, which is not followed: configure the issuer as the provider names itself'
+        : '';
+      throw new ProviderUnavailable(`the discovery document at ${discovery} answered ${response.status}${redirect}`);
     }
     const document = await response.json() as { issuer?: unknown; jwks_uri?: unknown };
     // A document that names another issuer belongs to another provider

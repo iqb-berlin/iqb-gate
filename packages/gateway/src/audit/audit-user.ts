@@ -20,8 +20,9 @@ export async function nameAuditUser(
   userClaim: string | undefined
 ): Promise<AuditUser> {
   const token = bearerJwt(authorization);
-  const identity = token && verifier ? await verifier.verify(token) : null;
-  if (identity) {
+  const verification = token && verifier ? await verifier.verify(token) : null;
+  if (verification?.status === 'verified') {
+    const { identity } = verification;
     return { user: (userClaim && claimText(identity.claims, userClaim)) || identity.username, userVerified: true };
   }
   return { user: userClaim ? unverifiedBearerClaim(authorization, userClaim) : null, userVerified: false };

@@ -1,5 +1,6 @@
 import {
-  type CanActivate, type ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException
+  type CanActivate, type ExecutionContext, ForbiddenException, Inject, Injectable, ServiceUnavailableException,
+  UnauthorizedException
 } from '@nestjs/common';
 import { bearerToken, type OidcVerifier } from '@iqb/gate-oidc';
 import {
@@ -17,8 +18,9 @@ export function httpRequestOf(context: ExecutionContext): OidcRequest {
  * provider the module was set up with. Puts the identity on `request.oidcIdentity`, and -- when
  * the module was given a `userSync` -- the application's own user on `request.user`. A request
  * without a valid token is 401; a person the user sync refuses is 403 -- known, but not let in, so
- * that a browser does not take it for an expired login and log in again. The reason of a 401 goes
- * to the module's log.
+ * that a browser does not take it for an expired login and log in again. While the provider cannot
+ * be asked, no token can be checked: 503, for the same reason. The reason of a 401 or a 503 goes to
+ * the module's log.
  *
  * The verifier and the user sync come from `IqbOidcModule`, never from the module that uses the
  * guard: every use of it -- in a feature module, as global guard -- applies the same rules.
@@ -33,8 +35,11 @@ export class OidcAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = httpRequestOf(context);
     const token = bearerToken(request.headers?.authorization);
-    const identity = token ? await this.verifier.verify(token) : null;
-    if (!identity) throw new UnauthorizedException();
+    if (!token) throw new UnauthorizedException();
+    const verification = await this.verifier.verify(token);
+    if (verification.status === 'unavailable') throw new ServiceUnavailableException();
+    if (verification.status !== 'verified') throw new UnauthorizedException();
+    const { identity } = verification;
     request.oidcIdentity = identity;
     if (this.userSync) {
       const user = await this.userSync.sync(identity);

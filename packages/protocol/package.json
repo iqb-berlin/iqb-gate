@@ -1,6 +1,6 @@
 {
   "name": "@iqb/gate-protocol",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "What the iqb-gate gateway and its client libraries agree on: headers, paths, status codes, types",
   "license": "MIT",
   "publishConfig": {

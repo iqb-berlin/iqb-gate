@@ -1,6 +1,6 @@
 {
   "name": "@iqb/gate-gateway",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The iqb-gate reverse proxy, shipped as the Docker image iqbberlin/iqb-gate",
   "license": "MIT",
@@ -19,8 +19,8 @@
   "dependencies": {
     "@fastify/cookie": "11.1.2",
     "@fastify/http-proxy": "11.6.4",
-    "@iqb/gate-oidc": "^0.1.0",
-    "@iqb/gate-protocol": "^0.1.0",
+    "@iqb/gate-oidc": "^0.2.0",
+    "@iqb/gate-protocol": "^0.2.0",
     "altcha": "3.3.0",
     "altcha-lib": "2.6.0",
     "fastify": "5.12.5",

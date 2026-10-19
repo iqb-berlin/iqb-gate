@@ -36,10 +36,14 @@ export const BUILD_CONFIGS = [
 const PINS_ALLOWED = ['altcha'];
 
 /**
- * What makes a range of versions -- an operator, a wildcard, a hyphen range (`1.2.3 - 1.4.0`):
- * anything without it -- `1.2.3`, `v1.2.3`, `npm:x@1.2.3` -- is one version.
+ * One version, with all three parts: `1.2.3`, `v1.2.3`, `=1.2.3`, `1.2.3-rc.1`. Anything else npm
+ * takes for a range -- `^1.2.3`, `1.x`, `6`, `2.8`, `1.2.3 - 1.4.0`, nothing at all -- and an alias
+ * (`npm:x@1.2.3`) by the version after its name.
  */
-const RANGE = /[\^~<>*|]|\s-\s|(^|[.\s])[xX](?=$|[.\s])/;
+const PIN = /^\s*[=v]*\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]*)?\s*$/;
+const ALIAS = /^npm:(@[^@/]+\/)?[^@]+@/;
+
+const pins = range => PIN.test(range.replace(ALIAS, ''));
 
 /** The maps of the dependencies an application installs with a library. */
 const INSTALLED_MAPS = ['dependencies', 'peerDependencies', 'optionalDependencies'];
@@ -58,7 +62,7 @@ const wrongRanges = (manifests, version) => manifests.flatMap(manifest => DEPEND
 /** A library that pins a dependency forces a copy of its own on every application that uses another version. */
 const pinnedDependencies = manifests => manifests.flatMap(manifest => INSTALLED_MAPS
   .flatMap(key => Object.entries(manifest[key] ?? {}))
-  .filter(([name, range]) => !OWN_PACKAGE.test(name) && !PINS_ALLOWED.includes(name) && !RANGE.test(range))
+  .filter(([name, range]) => !OWN_PACKAGE.test(name) && !PINS_ALLOWED.includes(name) && pins(range))
   .map(([name, range]) => `${manifest.name} pins ${name} to ${range}: a library depends on a range, such as ^`));
 
 export function publishProblems(manifests, gitStatus) {

@@ -54,13 +54,14 @@ describe('publishProblems', () => {
       version: '0.1.0',
       dependencies: { 'angular-auth-oidc-client': '22.0.1', tslib: '^2.8.1', altcha: '3.3.0', a: 'v1.2.3' },
       peerDependencies: {
-        rxjs: '7.8.1', '@angular/core': '>=20.0.0 <22.0.0', b: '1.x', c: '~1.2.0 || ^2', f: '7.4.0 - 7.8.2'
+        rxjs: '7.8.1', '@angular/core': '>=20.0.0 <22.0.0', b: '1.x', c: '~1.2.0 || ^2', f: '7.4.0 - 7.8.2',
+        g: '6', h: '2.8', i: '', j: '=6', k: 'npm:k@6', l: 'npm:l', m: '=1.2.3'
       },
-      optionalDependencies: { d: 'npm:d@1.2.3', e: '*' }
+      optionalDependencies: { d: 'npm:d@1.2.3', e: '*', n: 'npm:@scope/n@1.2.3-rc.1' }
     };
     const manifests = [...released('0.1.0').filter(manifest => manifest.name !== angular.name), angular, angular];
     assert.deepEqual(publishProblems(manifests, ''), ['angular-auth-oidc-client to 22.0.1', 'a to v1.2.3',
-      'rxjs to 7.8.1', 'd to npm:d@1.2.3']
+      'rxjs to 7.8.1', 'm to =1.2.3', 'd to npm:d@1.2.3', 'n to npm:@scope/n@1.2.3-rc.1']
       .map(pin => `@iqb/gate-angular pins ${pin}: a library depends on a range, such as ^`));
   });
 });

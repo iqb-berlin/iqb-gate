@@ -11,7 +11,7 @@ RUN npm ci --workspace @iqb/gate-protocol --workspace @iqb/gate-oidc --workspace
 COPY packages/protocol packages/protocol
 COPY packages/oidc packages/oidc
 COPY packages/gateway packages/gateway
-COPY scripts/clean-dist.mjs scripts/
+COPY scripts/clean-dist.mjs scripts/is-main.mjs scripts/
 RUN npm run build --workspace @iqb/gate-protocol \
  && npm run build --workspace @iqb/gate-oidc \
  && npm run build --workspace @iqb/gate-gateway \

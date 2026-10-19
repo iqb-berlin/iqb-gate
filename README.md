@@ -373,7 +373,7 @@ npm run build
 npm run build:examples
 ```
 
-Development needs Node 24.2 or later (the root `engines`; the root scripts use `import.meta.main`).
+Development needs Node 24.2 or later (the root `engines`).
 `npm test` runs the specs of every package and of the root scripts; the packages build from an empty
 `dist`, so a module deleted from the source does not linger there.
 

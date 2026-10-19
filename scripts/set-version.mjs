@@ -2,6 +2,7 @@
 // the versions but leaves the ranges between the packages as they were, and ^0.0.x matches one version only.
 // Usage: npm run version:set -- 0.1.0
 import { execFileSync } from 'node:child_process';
+import { isMain } from './is-main.mjs';
 import { DEPENDENCY_MAPS, OWN_PACKAGE, ROOT, workspaceManifests, writeManifest } from './manifests.mjs';
 
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
@@ -20,7 +21,7 @@ export function withVersion(manifest, version) {
   return { ...manifest, ...(OWN_PACKAGE.test(manifest.name) ? { version } : {}), ...ranges };
 }
 
-if (import.meta.main) {
+if (isMain(import.meta.url)) {
   const version = process.argv[2] ?? '';
   // All are worked out before the first is written: a wrong version leaves every file as it was
   const updated = workspaceManifests()

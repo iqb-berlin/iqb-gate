@@ -7,6 +7,7 @@
 //   node scripts/publish.mjs --dry-run    packs without publishing and reports the problems as warnings
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { isMain } from './is-main.mjs';
 import { DEPENDENCY_MAPS, OWN_PACKAGE, readManifest, ROOT, workspaceManifests } from './manifests.mjs';
 
 const ANGULAR_DIST = 'packages/angular/dist';
@@ -34,8 +35,11 @@ export const BUILD_CONFIGS = [
  */
 const PINS_ALLOWED = ['altcha'];
 
-/** What makes a range of versions: anything without it -- `1.2.3`, `v1.2.3`, `npm:x@1.2.3` -- is one version. */
-const RANGE = /[\^~<>*|]|(^|[.\s])[xX](?=$|[.\s])/;
+/**
+ * What makes a range of versions -- an operator, a wildcard, a hyphen range (`1.2.3 - 1.4.0`):
+ * anything without it -- `1.2.3`, `v1.2.3`, `npm:x@1.2.3` -- is one version.
+ */
+const RANGE = /[\^~<>*|]|\s-\s|(^|[.\s])[xX](?=$|[.\s])/;
 
 /** The maps of the dependencies an application installs with a library. */
 const INSTALLED_MAPS = ['dependencies', 'peerDependencies', 'optionalDependencies'];
@@ -109,7 +113,7 @@ const isOnNpm = (name, version) => {
   }
 };
 
-if (import.meta.main) {
+if (isMain(import.meta.url)) {
   const args = process.argv.slice(2);
   const checkOnly = args.includes('--check');
   const dryRun = args.includes('--dry-run');

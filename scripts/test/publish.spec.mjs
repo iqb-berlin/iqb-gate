@@ -53,7 +53,9 @@ describe('publishProblems', () => {
       name: '@iqb/gate-angular',
       version: '0.1.0',
       dependencies: { 'angular-auth-oidc-client': '22.0.1', tslib: '^2.8.1', altcha: '3.3.0', a: 'v1.2.3' },
-      peerDependencies: { rxjs: '7.8.1', '@angular/core': '>=20.0.0 <22.0.0', b: '1.x', c: '~1.2.0 || ^2' },
+      peerDependencies: {
+        rxjs: '7.8.1', '@angular/core': '>=20.0.0 <22.0.0', b: '1.x', c: '~1.2.0 || ^2', f: '7.4.0 - 7.8.2'
+      },
       optionalDependencies: { d: 'npm:d@1.2.3', e: '*' }
     };
     const manifests = [...released('0.1.0').filter(manifest => manifest.name !== angular.name), angular, angular];

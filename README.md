@@ -322,7 +322,7 @@ bootstrapApplication(AppComponent, {
 
 **Logging in with OpenID Connect** -- as coding-box does with Keycloak, for any provider. It is an
 entry point of its own, `@iqb/gate-angular/oidc`, so that an application without OIDC needs no OIDC
-client:
+client (up to 0.1.0, these were exported by `@iqb/gate-angular` itself):
 
 ```typescript
 import { iqbOidcInterceptors, provideIqbOidc } from '@iqb/gate-angular/oidc';
@@ -364,7 +364,8 @@ the realm roles of the access token -- for the view; what they allow, the backen
 `login()` and `logout()`, which drops the tokens and ends the provider's session even if they cannot
 be revoked. Built on `angular-auth-oidc-client` 22, an optional peer dependency that an
 application using `@iqb/gate-angular/oidc` installs itself, so that it injects the same
-`OidcSecurityService` the library configures; the application needs `@angular/router` as well.
+`OidcSecurityService` the library configures; the application needs `@angular/router` as well,
+a peer of that client.
 The backends check the token with `@iqb/gate-nest` or `@iqb/gate-oidc`.
 
 Applications that register interceptors as classes use `IqbGateInterceptor` with

@@ -15,6 +15,14 @@ const RESTRICTED_IMPORTS = [
   }
 ];
 
+/**
+ * The rule with the paths above and one pattern more: a later block replaces the rule's options,
+ * so each block that adds a pattern repeats the paths.
+ */
+function restrictedImports(regex, message) {
+  return ['error', { paths: RESTRICTED_IMPORTS, patterns: [{ regex, message }] }];
+}
+
 export default tseslint.config(
   { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'] },
   js.configs.recommended,
@@ -46,21 +54,28 @@ export default tseslint.config(
   },
   {
     // The OIDC client is an optional peer: only the entry point @iqb/gate-angular/oidc may need it,
-    // directly or through that entry point. A later block replaces the rule's options, so the paths
-    // above are repeated. The build is checked as well (packages/angular/test/dist-smoke.cjs).
+    // directly or through that entry point. The build is checked as well (test/dist-smoke.cjs).
     files: ['packages/angular/src/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', {
-        paths: RESTRICTED_IMPORTS,
-        patterns: [{
-          regex: '^angular-auth-oidc-client(/|$)|^@iqb/gate-angular/oidc(/|$)|(^|/)oidc/src(/|$)',
-          message: 'Only in packages/angular/oidc: the main entry point must not need the optional peer.'
-        }]
-      }]
+      'no-restricted-imports': restrictedImports(
+        '^angular-auth-oidc-client(/|$)|^@iqb/gate-angular/oidc(/|$)|(^|/)oidc/src(/|$)',
+        'Only in packages/angular/oidc: the main entry point must not need the optional peer.'
+      )
     }
   },
   {
-    // Scripts that run as CommonJS on purpose -- the dist smoke test of @iqb/gate-nest
+    // oidc/src has no subfolders: whatever '../' reaches lies outside the entry point, and its
+    // build would carry a second copy of it -- the main entry point's tokens and services included.
+    files: ['packages/angular/oidc/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports(
+        '^\\.\\./',
+        'The oidc entry point is built on its own: it must not import sources outside oidc/src.'
+      )
+    }
+  },
+  {
+    // Scripts that run as CommonJS on purpose -- the dist smoke tests of @iqb/gate-nest and -angular
     files: ['**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',

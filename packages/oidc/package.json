@@ -19,6 +19,13 @@
       "default": "./dist/testing/fake-provider.js"
     }
   },
+  "typesVersions": {
+    "*": {
+      "testing": [
+        "dist/testing/fake-provider.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist"
   ],
@@ -30,7 +37,7 @@
     "prebuild": "node ../../scripts/clean-dist.mjs",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/node10/tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

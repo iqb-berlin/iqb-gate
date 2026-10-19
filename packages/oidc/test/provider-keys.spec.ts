@@ -114,16 +114,85 @@ describe('ProviderKeys', () => {
     await expect(check()).rejects.toThrow(/503/);
   });
 
-  it('fetches again for a key id it does not know, at most every thirty seconds', async () => {
+  // A provider may sign with a new key at once, seconds after the routine fetch
+  it('fetches at once for a key id it does not know, after a routine fetch too, then at most every thirty seconds',
+    async () => {
+      await check();
+      later(10 * MINUTE_MS + 1);
+      await check();
+      await provider.addKey('key-2');
+      const before = provider.jwksFetches;
+      later(5 * 1000);
+      await expect(check('key-2')).resolves.toBeDefined();
+      expect(provider.jwksFetches - before).toBe(1);
+      await provider.addKey('key-3');
+      later(10 * 1000);
+      await expect(check('key-3')).rejects.toBeInstanceOf(errors.JWKSNoMatchingKey);
+      expect(provider.jwksFetches - before).toBe(1);
+      later(20 * 1000);
+      await expect(check('key-3')).resolves.toBeDefined();
+      expect(provider.jwksFetches - before).toBe(2);
+    });
+
+  it('does not fetch again for a key id the keys just fetched for the same token do not know', async () => {
+    await provider.addKey('key-unpublished');
+    provider.removeKey('key-unpublished');
     await check();
-    await provider.addKey('key-2');
     const before = provider.jwksFetches;
-    later(10 * 1000);
-    await expect(check('key-2')).rejects.toBeInstanceOf(errors.JWKSNoMatchingKey);
-    expect(provider.jwksFetches - before).toBe(0);
-    later(30 * 1000);
-    await expect(check('key-2')).resolves.toBeDefined();
+    later(10 * MINUTE_MS + 1);
+    await expect(check('key-unpublished')).rejects.toBeInstanceOf(errors.JWKSNoMatchingKey);
     expect(provider.jwksFetches - before).toBe(1);
+  });
+
+  // A pause sends no request: a key id that meets it must not hold off the next one
+  it('fetches for a key id it does not know though another one met a failed fetch shortly before', async () => {
+    await provider.addKey('key-unknown');
+    provider.removeKey('key-unknown');
+    await check();
+    provider.keysAnswer = 503;
+    later(10 * MINUTE_MS + 1);
+    await expect(check()).resolves.toBeDefined();
+    later(29 * 1000);
+    const before = provider.jwksFetches;
+    await expect(check('key-unknown')).rejects.toBeInstanceOf(errors.JWKSNoMatchingKey);
+    expect(provider.jwksFetches).toBe(before);
+    provider.keysAnswer = null;
+    later(2 * 1000);
+    await expect(check()).resolves.toBeDefined();
+    await provider.addKey('key-late');
+    later(1000);
+    await expect(check('key-late')).resolves.toBeDefined();
+  });
+
+  // An unread body holds its connection: a provider that is down would collect them
+  it('cancels the body of an answer that holds no keys', async () => {
+    let cancelled = false;
+    const body = new ReadableStream({
+      cancel: () => {
+        cancelled = true;
+      }
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status: 503 }));
+    try {
+      await expect(check()).rejects.toThrow(/503/);
+      expect(cancelled).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('says what the provider answered, though the body cannot be cancelled', async () => {
+    const body = new ReadableStream({
+      cancel: () => {
+        throw new Error('terminated');
+      }
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status: 503 }));
+    try {
+      await expect(check()).rejects.toThrow(/answered 503/);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   // Keys from wherever a redirect points are no keys of the provider's

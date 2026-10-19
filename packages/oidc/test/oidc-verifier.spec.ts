@@ -140,15 +140,10 @@ describe('OidcVerifier', () => {
     await keeping.verify(await provider.sign());
     expect(provider.jwksFetches).toBe(fetches);
 
-    // The keys are fetched again for an unknown key id -- once a cooldown of 30 s after the last fetch is over
+    // The keys are fetched again for an unknown key id, at once: the provider may sign with a new key
     await provider.addKey('key-2');
     const rotated = await provider.sign({}, { kid: 'key-2' });
-    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31_000 });
-    try {
-      expect((await keeping.verify(rotated)).status).toBe('verified');
-    } finally {
-      vi.useRealTimers();
-    }
+    expect((await keeping.verify(rotated)).status).toBe('verified');
     expect(provider.jwksFetches).toBe(fetches + 1);
   });
 
@@ -182,6 +177,22 @@ describe('OidcVerifier', () => {
       expect((await keeping.verify(forged)).status).toBe('rejected');
       expect(onRejected).toHaveBeenCalledTimes(1);
       expect(onUnavailable).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      provider.keysAnswer = null;
+    }
+  });
+
+  it('says once per failed fetch that the keys cannot be fetched, while it has none to go on with', async () => {
+    const keyless = verifier();
+    provider.keysAnswer = 503;
+    try {
+      expect((await keyless.verify(await provider.sign())).status).toBe('unavailable');
+      expect((await keyless.verify(await provider.sign())).status).toBe('unavailable');
+      expect(onUnavailable).toHaveBeenCalledTimes(1);
+      vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31_000 });
+      expect((await keyless.verify(await provider.sign())).status).toBe('unavailable');
+      expect(onUnavailable).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
       provider.keysAnswer = null;
@@ -249,11 +260,13 @@ describe('OidcVerifier', () => {
       expect((await unreachable.verify(await provider.sign({ iss: issuer }))).status).toBe('unavailable');
       expect((await unreachable.verify(await provider.sign({ iss: issuer }))).status).toBe('unavailable');
       expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(onUnavailable).toHaveBeenCalledTimes(2);
+      // Once for the failed attempt, not for every token it refuses: a log would fill with it
+      expect(onUnavailable).toHaveBeenCalledTimes(1);
 
       vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31_000 });
       expect((await unreachable.verify(await provider.sign({ iss: issuer }))).status).toBe('unavailable');
       expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(onUnavailable).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
       fetchSpy.mockRestore();

@@ -33,6 +33,8 @@ type LocalKeys = ReturnType<typeof createLocalJWKSet>;
 export class ProviderKeys {
   private keys: LocalKeys | null = null;
   private fetchedAt = 0;
+  /** When a key id not known yet last sent a request -- not when the keys were last fetched. */
+  private keyIdFetchedAt = 0;
   private failedAt = 0;
   private failure: Error | null = null;
   private pending: Promise<void> | null = null;
@@ -42,12 +44,17 @@ export class ProviderKeys {
 
   /** The key for a token's header, as `jwtVerify` asks for it. */
   readonly getKey: JWTVerifyGetKey = async (header, token) => {
+    const fetchedBefore = this.fetchedAt;
     const keys = await this.current();
     try {
       return await keys(header, token);
     } catch (error) {
-      // A key id not known yet: the provider may have added a key since the last fetch
-      if (!(error instanceof errors.JWKSNoMatchingKey) || Date.now() - this.fetchedAt < RETRY_PAUSE_MS) throw error;
+      // A key id not known yet: the provider may have added a key since the last fetch -- a routine
+      // one too, as it may sign with a new key at once. Not when the keys were just fetched for this
+      // token, nor while a failed fetch stands: that would send no request, only use up the pause.
+      if (!(error instanceof errors.JWKSNoMatchingKey) || this.fetchedAt !== fetchedBefore) throw error;
+      if (this.failing() || Date.now() - this.keyIdFetchedAt < RETRY_PAUSE_MS) throw error;
+      this.keyIdFetchedAt = Date.now();
       // A provider that cannot be asked leaves the key unknown -- the token's fault, not an outage
       await this.refresh().catch(() => {
         throw error;
@@ -74,9 +81,14 @@ export class ProviderKeys {
     return this.keys && Date.now() - this.fetchedAt < STALE_LIMIT_MS ? this.keys : null;
   }
 
+  /** A failed fetch that stands: the provider is not asked again before {@link RETRY_PAUSE_MS}. */
+  private failing(): boolean {
+    return this.failure !== null && Date.now() - this.failedAt < RETRY_PAUSE_MS;
+  }
+
   /** Fetches the keys, once for all who ask at the same time; a failure stands for {@link RETRY_PAUSE_MS}. */
   private refresh(): Promise<void> {
-    if (this.failure && Date.now() - this.failedAt < RETRY_PAUSE_MS) return Promise.reject(this.failure);
+    if (this.failure && this.failing()) return Promise.reject(this.failure);
     this.pending ??= this.fetchKeys().finally(() => {
       this.pending = null;
     });
@@ -103,7 +115,11 @@ export class ProviderKeys {
       redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     });
-    if (response.status !== 200) throw new Error(`the provider's keys at ${this.uri} answered ${response.status}`);
+    if (response.status !== 200) {
+      // An unread body holds its connection; a failed cancel does not hide the status
+      await response.body?.cancel().catch(() => {});
+      throw new Error(`the provider's keys at ${this.uri} answered ${response.status}`);
+    }
     // Refuses what is no key set
     return createLocalJWKSet(await response.json() as JSONWebKeySet);
   }

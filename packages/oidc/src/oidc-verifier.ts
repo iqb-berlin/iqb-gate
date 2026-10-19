@@ -28,7 +28,8 @@ export interface OidcVerifierOptions {
   onRejected?: (reason: string, error?: unknown) => void;
   /**
    * Told when the provider cannot be asked -- unreachable, or configured wrongly: then no token
-   * holds, and someone has to look. For a warning in the log.
+   * holds, and someone has to look. For a warning in the log: told once for each attempt to ask the
+   * provider that failed, not for each token refused while the failure stands.
    */
   onUnavailable?: (reason: string, error?: unknown) => void;
   /**
@@ -113,6 +114,8 @@ function checkBeforeKeys(token: string, issuer: string): void {
 export class OidcVerifier {
   private keySet: Promise<ProviderKeys> | null = null;
   private keySetFailedAt = 0;
+  /** What {@link OidcVerifierOptions.onUnavailable} was told last, and when. */
+  private reported = { reason: '', at: 0 };
   private readonly issuer: string;
 
   constructor(private readonly options: OidcVerifierOptions) {
@@ -138,12 +141,22 @@ export class OidcVerifier {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       if (error instanceof ProviderUnavailable) {
-        this.options.onUnavailable?.(reason, error);
+        this.reportUnavailable(reason, error);
         return { status: 'unavailable', reason };
       }
       this.options.onRejected?.(reason, error);
       return { status: 'rejected', reason };
     }
+  }
+
+  /**
+   * Tells of a failure once for each attempt to ask the provider: a failed attempt stands for
+   * {@link RETRY_PAUSE_MS}, and every token in that time meets the same reason.
+   */
+  private reportUnavailable(reason: string, error: ProviderUnavailable): void {
+    if (reason === this.reported.reason && Date.now() - this.reported.at < RETRY_PAUSE_MS) return;
+    this.reported = { reason, at: Date.now() };
+    this.options.onUnavailable?.(reason, error);
   }
 
   private checkClaims(payload: JWTPayload): void {
@@ -217,7 +230,8 @@ export class OidcVerifier {
       throw new ProviderUnavailable(`the discovery document at ${discovery} could not be fetched: ${error}`);
     }
     if (!response.ok) {
-      await response.body?.cancel();
+      // An unread body holds its connection; a failed cancel does not hide the status
+      await response.body?.cancel().catch(() => {});
       const redirect = response.status >= 300 && response.status < 400
         ? ' -- a redirect, which is not followed: configure the issuer as the provider names itself'
         : '';

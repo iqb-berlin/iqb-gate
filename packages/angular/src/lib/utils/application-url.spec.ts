@@ -15,7 +15,13 @@ describe('applicationUrl', () => {
 
   it('should take the base of an application below a path', () => {
     expect(applicationUrl(page, '/studio/')).toBe('https://host/studio/');
-    expect(applicationUrl(page, 'https://host/studio/index.html')).toBe('https://host/studio/');
+    expect(applicationUrl(page, 'https://host/studio/')).toBe('https://host/studio/');
+    expect(applicationUrl(page, '/studio/index.html')).toBe('https://host/studio/');
+  });
+
+  // The router takes a base without its slash as the same path
+  it('should take a base without its trailing slash as the same path', () => {
+    expect(applicationUrl(page, '/studio')).toBe('https://host/studio/');
   });
 
   it('should take the origin for a base on another origin', () => {

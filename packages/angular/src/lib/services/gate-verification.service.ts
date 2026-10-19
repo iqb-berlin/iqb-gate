@@ -16,6 +16,8 @@ import {
  * the first 428 -- comes back with a 428 the challenge has answered already, and is repeated without
  * asking again. A 428 for a request sent afterwards is news: the gateway took the verification back
  * (writes faster than a person, observations a fresh challenge has to answer), and the dialog opens.
+ * While a dialog is open, every 428 waits for it, whenever its request was sent: the session is not
+ * verified until the person solves it.
  *
  * The dialog is part of the library's bundle -- it is small, and the applications load Material's
  * dialog anyway. What is loaded only when a challenge is due is the ALTCHA widget in it.
@@ -33,22 +35,21 @@ export class GateVerificationService {
    * clock that cannot be set back. Without it, the dialog opens.
    */
   verify(sentAt?: number): Observable<boolean> {
+    if (this.pending) return this.pending;
     if (sentAt !== undefined && this.verifiedAt !== null && sentAt < this.verifiedAt) return of(true);
-    if (!this.pending) {
-      this.pending = this.dialog
-        .open(GateVerificationDialogComponent, { width: '420px', disableClose: true })
-        .afterClosed()
-        .pipe(
-          map(result => result === true),
-          tap(verified => {
-            if (verified) this.verifiedAt = performance.now();
-          }),
-          finalize(() => {
-            this.pending = null;
-          }),
-          shareReplay(1)
-        );
-    }
+    this.pending = this.dialog
+      .open(GateVerificationDialogComponent, { width: '420px', disableClose: true })
+      .afterClosed()
+      .pipe(
+        map(result => result === true),
+        tap(verified => {
+          if (verified) this.verifiedAt = performance.now();
+        }),
+        finalize(() => {
+          this.pending = null;
+        }),
+        shareReplay(1)
+      );
     return this.pending;
   }
 }

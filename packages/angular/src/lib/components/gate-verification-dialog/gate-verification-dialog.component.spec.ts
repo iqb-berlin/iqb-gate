@@ -52,6 +52,12 @@ describe('GateVerificationDialogComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(texts.intro);
   });
 
+  // Only the dialog decides what it shows: whoever holds the instance reads its state
+  it('should hand out its state read-only', () => {
+    [component.widgetReady, component.challenge, component.failed, component.loadFailed]
+      .forEach(state => expect(state).not.toHaveProperty('set'));
+  });
+
   it('should hand the widget its texts, under a language of its own', () => {
     const [language, widgetTexts] = i18nSet.mock.calls[0];
     expect(language).toBe(WIDGET_LANGUAGE);

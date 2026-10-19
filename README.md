@@ -348,8 +348,10 @@ answers itself (a password it asks for) carries `IQB_OIDC_OWN_UNAUTHORIZED` in i
 keeps its 401. `IqbOidcService` gives `isAuthenticated$`, `identity$` (subject, username, e-mail, and
 the realm roles of the access token -- for the view; what they allow, the backend decides),
 `login()` and `logout()`, which drops the tokens and ends the provider's session even if they cannot
-be revoked. Built on `angular-auth-oidc-client`; the application needs `@angular/router`. The
-backends check the token with `@iqb/gate-nest` or `@iqb/gate-oidc`.
+be revoked. Built on `angular-auth-oidc-client` 22, a peer dependency the application installs
+itself, so that it injects the same `OidcSecurityService` the library configures; the application
+needs `@angular/router` as well. The backends check the token with `@iqb/gate-nest` or
+`@iqb/gate-oidc`.
 
 Applications that register interceptors as classes use `IqbGateInterceptor` with
 `HTTP_INTERCEPTORS` instead. `isGateRefusal(error)` tells an error the gateway caused -- the

@@ -104,6 +104,26 @@ describe('GateVerificationService', () => {
     expect(dialog.open).toHaveBeenCalledTimes(2);
   });
 
+  // The gateway took the verification back, and a dialog is open: the session is not verified
+  it('should let a request sent before the solved challenge wait for a dialog that is open again', () => {
+    jest.useFakeTimers();
+    const sentBefore = performance.now();
+    service.verify(sentBefore).subscribe();
+    jest.advanceTimersByTime(4000);
+    close(true);
+
+    closed = new Subject<boolean | undefined>();
+    jest.advanceTimersByTime(1000);
+    service.verify(performance.now()).subscribe();
+    const results: boolean[] = [];
+    service.verify(sentBefore).subscribe(result => results.push(result));
+    expect(results).toEqual([]);
+
+    close(false);
+    expect(results).toEqual([false]);
+    expect(dialog.open).toHaveBeenCalledTimes(2);
+  });
+
   it('should ask when it is not told when the request was sent', () => {
     service.verify().subscribe();
     close(true);

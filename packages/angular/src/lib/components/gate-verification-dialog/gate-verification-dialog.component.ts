@@ -36,14 +36,18 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
   private readonly dialogRef = inject(MatDialogRef<GateVerificationDialogComponent>);
   readonly texts: GateTexts = inject(IQB_GATE_TEXTS)();
   readonly widgetLanguage = WIDGET_LANGUAGE;
+  private readonly widgetReadyState = signal(false);
+  private readonly challengeState = signal<string | null>(null);
+  private readonly failedState = signal(false);
+  private readonly loadFailedState = signal(false);
   /** The widget is loaded and knows its texts. */
-  readonly widgetReady = signal(false);
+  readonly widgetReady = this.widgetReadyState.asReadonly();
   /** The challenge as JSON, which the widget reads from its `challenge` attribute. */
-  readonly challenge = signal<string | null>(null);
+  readonly challenge = this.challengeState.asReadonly();
   /** The gateway did not accept a solution; a new challenge is fetched with it. */
-  readonly failed = signal(false);
+  readonly failed = this.failedState.asReadonly();
   /** No challenge, or no widget, could be loaded; the person can try again instead of losing the write. */
-  readonly loadFailed = signal(false);
+  readonly loadFailed = this.loadFailedState.asReadonly();
   private readonly widgetLoadFailures = signal(0);
   /**
    * The widget failed to load more than once, and has not loaded since: a browser that keeps a failed
@@ -58,8 +62,8 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
 
   /** Loads what is missing: the widget, unless it is there, and a new challenge -- a fresh start. */
   load(): void {
-    this.loadFailed.set(false);
-    this.failed.set(false);
+    this.loadFailedState.set(false);
+    this.failedState.set(false);
     if (!this.widgetReady()) this.loadWidget();
     this.loadChallenge();
   }
@@ -68,11 +72,11 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
     loadAltchaWidget().then(
       () => {
         this.registerWidgetTexts();
-        this.widgetReady.set(true);
+        this.widgetReadyState.set(true);
       },
       () => {
         this.widgetLoadFailures.update(failures => failures + 1);
-        this.loadFailed.set(true);
+        this.loadFailedState.set(true);
       }
     );
   }
@@ -83,16 +87,16 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
   }
 
   private loadChallenge(): void {
-    this.challenge.set(null);
+    this.challengeState.set(null);
     this.challengeService.challenge()
       .pipe(takeUntil(this.ngUnsubscribe))
       .subscribe(challenge => {
         if (challenge) {
-          this.challenge.set(JSON.stringify(challenge));
+          this.challengeState.set(JSON.stringify(challenge));
         } else {
           // Instead of the failure of an earlier solution: there is nothing to solve now
-          this.failed.set(false);
-          this.loadFailed.set(true);
+          this.failedState.set(false);
+          this.loadFailedState.set(true);
         }
       });
   }
@@ -107,7 +111,7 @@ export class GateVerificationDialogComponent implements OnInit, OnDestroy {
         if (verified) {
           this.dialogRef.close(true);
         } else {
-          this.failed.set(true);
+          this.failedState.set(true);
           this.loadChallenge();
         }
       });

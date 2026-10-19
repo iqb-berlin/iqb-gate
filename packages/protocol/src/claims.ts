@@ -26,9 +26,20 @@ function roleList(value: unknown): string[] {
   return Array.isArray(value) ? value.map(textClaim).filter((role): role is string => role !== null) : [];
 }
 
-/** A name to show: `preferred_username`, else the e-mail address, else the subject. */
+/**
+ * The provider's id of the person: `sub` exactly as sent -- an identifier, which a blank changes --
+ * as long as it is a text that is not only blanks; `null` otherwise.
+ */
+export function subjectOf(claims: PersonClaims): string | null {
+  return typeof claims.sub === 'string' && claims.sub.trim() !== '' ? claims.sub : null;
+}
+
+/**
+ * A name to show: `preferred_username`, else the e-mail address, else the subject -- each without
+ * the blanks around it, the subject too, which stays as sent where it keys the person.
+ */
 export function usernameOf(claims: PersonClaims, subject: string): string {
-  return textClaim(claims.preferred_username) ?? textClaim(claims.email) ?? subject;
+  return textClaim(claims.preferred_username) ?? textClaim(claims.email) ?? textClaim(subject) ?? subject;
 }
 
 /** The roles of the realm and, if a client is named, those of the client -- each once. */

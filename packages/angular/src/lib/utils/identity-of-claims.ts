@@ -1,4 +1,6 @@
-import { type PersonClaims, rolesOf, textClaim, usernameOf } from '@iqb/gate-protocol';
+import {
+  type PersonClaims, rolesOf, subjectOf, textClaim, usernameOf
+} from '@iqb/gate-protocol';
 
 /** Who is logged in, for the application's view. */
 export interface IqbOidcIdentity {
@@ -26,7 +28,7 @@ export function sameIdentity(a: IqbOidcIdentity | null, b: IqbOidcIdentity | nul
 
 /**
  * The identity of an ID token's claims, with the roles of the access token's; `null` without a
- * subject. Names and roles follow the rule the backends verify tokens by (`@iqb/gate-protocol`).
+ * subject. Subject, names and roles follow the rule the backends verify tokens by (`@iqb/gate-protocol`).
  */
 export function identityOfClaims(
   idToken: unknown,
@@ -34,7 +36,7 @@ export function identityOfClaims(
   clientId?: string
 ): IqbOidcIdentity | null {
   const claims = (idToken ?? {}) as PersonClaims;
-  const subject = textClaim(claims.sub);
+  const subject = subjectOf(claims);
   if (!subject) return null;
   return {
     subject,

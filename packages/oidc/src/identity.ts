@@ -1,6 +1,6 @@
 import type { JWTPayload } from 'jose';
 import {
-  type PersonClaims, rolesOf, textClaim, usernameOf
+  type PersonClaims, rolesOf, subjectOf, textClaim, usernameOf
 } from '@iqb/gate-protocol';
 
 /** Who a verified token names, in the words the applications use. */
@@ -22,12 +22,13 @@ export interface OidcIdentity {
 
 /**
  * The identity a verified token names. Expects `iss` and `sub` to be there -- the verifier has
- * checked them. Names and roles follow the rule the browser library shows them by
+ * checked them; throws without a subject. Subject, names and roles follow the rule the browser library shows them by
  * (`@iqb/gate-protocol`).
  */
 export function identityOf(payload: JWTPayload, clientId?: string): OidcIdentity {
   const claims = payload as JWTPayload & PersonClaims;
-  const subject = String(claims.sub);
+  const subject = subjectOf(claims);
+  if (subject === null) throw new Error('the token names no subject');
   return {
     issuer: String(claims.iss),
     subject,

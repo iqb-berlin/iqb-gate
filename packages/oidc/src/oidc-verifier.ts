@@ -1,6 +1,7 @@
 import {
   decodeJwt, decodeProtectedHeader, errors, type JWTPayload, jwtVerify, type JWTVerifyGetKey
 } from 'jose';
+import { subjectOf } from '@iqb/gate-protocol';
 import { identityOf, type OidcIdentity } from './identity.js';
 import { ProviderKeys, RETRY_PAUSE_MS } from './provider-keys.js';
 
@@ -149,7 +150,7 @@ export class OidcVerifier {
     if (typeof payload.iss !== 'string' || withoutTrailingSlash(payload.iss) !== this.issuer) {
       throw new TokenRejected(`the token's issuer is ${String(payload.iss)}`);
     }
-    if (typeof payload.sub !== 'string' || payload.sub.trim() === '') {
+    if (subjectOf(payload) === null) {
       throw new TokenRejected('the token names no subject');
     }
     // Keycloak says in `typ` what a token is; an ID token or a refresh token is no key to an API

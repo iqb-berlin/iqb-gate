@@ -9,6 +9,12 @@ describe('identityOfClaims', () => {
   it('should know nobody without a subject', () => {
     expect(identityOfClaims(null)).toBeNull();
     expect(identityOfClaims({ preferred_username: 'anna' })).toBeNull();
+    expect(identityOfClaims({ sub: '  ', preferred_username: 'anna' })).toBeNull();
+  });
+
+  // The backend keys the person by the subject as sent; the view must name the same one
+  it('should take the subject exactly as sent, and show it as a name without blanks', () => {
+    expect(identityOfClaims({ sub: ' 42 ' })).toEqual(expect.objectContaining({ subject: ' 42 ', username: '42' }));
   });
 
   // The backend grants the client's roles as well; the view must not show fewer

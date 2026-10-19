@@ -47,4 +47,14 @@ describe('identityOf', () => {
     expect(identity.roles).toEqual(['admin', 'editor']);
     expect(identityOf({ iss: 'i', sub: 's1', preferred_username: '   ', email: 'a@b.org' }).username).toBe('a@b.org');
   });
+
+  // An identifier, which the browser library takes as sent as well
+  it('takes the subject exactly as sent, and shows it as a name without blanks', () => {
+    expect(identityOf({ iss: 'i', sub: ' 42 ' }))
+      .toEqual(expect.objectContaining({ subject: ' 42 ', username: '42' }));
+  });
+
+  it('throws without a subject, which the verifier has checked', () => {
+    expect(() => identityOf({ iss: 'i', sub: '  ' })).toThrow('the token names no subject');
+  });
 });

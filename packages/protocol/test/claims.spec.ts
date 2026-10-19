@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { rolesOf, textClaim, usernameOf } from '../src/claims.js';
+import {
+  rolesOf, subjectOf, textClaim, usernameOf
+} from '../src/claims.js';
 
 describe('textClaim', () => {
   it('takes a text without the blanks around it, and nothing else', () => {
@@ -10,11 +12,22 @@ describe('textClaim', () => {
   });
 });
 
+// An identifier: the browser and the backend have to key a person alike
+describe('subjectOf', () => {
+  it('takes the subject exactly as sent, and nothing that is no text or only blanks', () => {
+    expect(subjectOf({ sub: ' 42 ' })).toBe(' 42 ');
+    expect(subjectOf({ sub: '   ' })).toBeNull();
+    expect(subjectOf({ sub: 42 })).toBeNull();
+    expect(subjectOf({})).toBeNull();
+  });
+});
+
 describe('usernameOf', () => {
   it('names a person by preferred_username, else the e-mail address, else the subject', () => {
     expect(usernameOf({ preferred_username: 'anna', email: 'a@b.org' }, 's1')).toBe('anna');
     expect(usernameOf({ preferred_username: ' ', email: 'a@b.org' }, 's1')).toBe('a@b.org');
     expect(usernameOf({}, 's1')).toBe('s1');
+    expect(usernameOf({}, ' 42 ')).toBe('42');
   });
 });
 

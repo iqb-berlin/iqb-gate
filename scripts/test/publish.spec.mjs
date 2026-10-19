@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
-  BUILD_CONFIGS, mapsWithoutSources, PUBLISHED, publishCommands, publishProblems
+  BUILD_CONFIGS, licensesMissing, mapsWithoutSources, PACKAGE_FOLDERS, PUBLISHED, publishCommands, publishProblems
 } from '../publish.mjs';
 import { ROOT } from '../manifests.mjs';
 
@@ -83,6 +83,33 @@ describe('mapsWithoutSources', () => {
     } finally {
       rmSync(dist, { recursive: true });
     }
+  });
+});
+
+describe('licensesMissing', () => {
+  it('reports the folders without the license, or with another one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'licenses-'));
+    try {
+      ['same', 'other', 'none'].forEach(folder => mkdirSync(join(root, folder)));
+      writeFileSync(join(root, 'LICENSE'), 'MIT');
+      writeFileSync(join(root, 'same', 'LICENSE'), 'MIT');
+      writeFileSync(join(root, 'other', 'LICENSE'), 'MIT, 2019');
+      assert.deepEqual(licensesMissing(join(root, 'LICENSE'), ['same', 'other', 'none'].map(f => join(root, f))), [
+        `${join(root, 'other')}/LICENSE is missing or differs from ${join(root, 'LICENSE')}`,
+        `${join(root, 'none')}/LICENSE is missing or differs from ${join(root, 'LICENSE')}`
+      ]);
+    } finally {
+      rmSync(root, { recursive: true });
+    }
+  });
+
+  it('reports a repository without its license, instead of failing', () => {
+    assert.deepEqual(licensesMissing('/nowhere/LICENSE', ['/nowhere/a']), ['/nowhere/LICENSE is missing']);
+  });
+
+  // A copy that drifts from the repository's would be published as it is
+  it('finds the repository\'s license in the folder of every published package', () => {
+    assert.deepEqual(licensesMissing(`${ROOT}LICENSE`, PACKAGE_FOLDERS.map(folder => `${ROOT}${folder}`)), []);
   });
 });
 

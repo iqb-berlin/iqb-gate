@@ -39,3 +39,11 @@ describe('.dockerignore', () => {
     assert.ok(patternsOf('.dockerignore').includes('**/.env.*'));
   });
 });
+
+// The image ships the packages' code: the MIT license goes with every copy
+describe('the gateway image', () => {
+  it('carries the license, which the build context does not leave out', () => {
+    assert.match(readFileSync(`${ROOT}packages/gateway/Dockerfile`, 'utf8'), /^COPY LICENSE \.\/$/m);
+    assert.ok(!patternsOf('.dockerignore').some(pattern => ['LICENSE', '**/LICENSE'].includes(pattern)));
+  });
+});

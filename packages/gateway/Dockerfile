@@ -28,6 +28,8 @@ COPY --from=build /build/packages/oidc/package.json packages/oidc/
 COPY --from=build /build/packages/oidc/dist packages/oidc/dist
 COPY --from=build /build/packages/gateway/package.json packages/gateway/
 COPY --from=build /build/packages/gateway/dist packages/gateway/dist
+# The MIT license goes with every copy of the packages in the image
+COPY LICENSE ./
 # The audit log of checked writes
 RUN mkdir -p /var/lib/iqb-gate && chown node:node /var/lib/iqb-gate
 VOLUME /var/lib/iqb-gate

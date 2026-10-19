@@ -20,8 +20,11 @@ const TARGETS = [
 
 export const PUBLISHED = TARGETS.map(target => target.name);
 
+/** The folders of the published packages, each with a copy of the license; ng-packagr copies Angular's to its dist. */
+export const PACKAGE_FOLDERS = ['packages/protocol', 'packages/oidc', 'packages/nest', 'packages/angular'];
+
 /** Where the published packages are built; their source maps go with them. */
-const DISTS = ['packages/protocol/dist', 'packages/oidc/dist', 'packages/nest/dist', ANGULAR_DIST];
+const DISTS = PACKAGE_FOLDERS.map(folder => `${folder}/dist`);
 
 /** The TypeScript configurations that build the Node packages (Angular's is ng-packagr's). */
 export const BUILD_CONFIGS = [
@@ -103,6 +106,20 @@ export function mapsWithoutSources(dists) {
     .map(({ path, carries }) => (carries === null ? `${path} is no source map` : `${path} does not carry its sources`));
 }
 
+const readOrNull = path => (existsSync(path) ? readFileSync(path, 'utf8') : null);
+
+/**
+ * The folders in `folders` whose LICENSE is missing or is not the repository's `license`: the MIT
+ * license goes with every copy, and npm packs a package's LICENSE with it.
+ */
+export function licensesMissing(license, folders) {
+  const text = readOrNull(license);
+  if (text === null) return [`${license} is missing`];
+  return folders
+    .filter(folder => readOrNull(`${folder}/LICENSE`) !== text)
+    .map(folder => `${folder}/LICENSE is missing or differs from ${license}`);
+}
+
 export function publishCommands(npmArgs, onNpmAlready = []) {
   return TARGETS
     .filter(target => !onNpmAlready.includes(target.name))
@@ -130,7 +147,11 @@ if (isMain(import.meta.url)) {
   const problems = [
     ...publishProblems([...sources, ...dist], gitStatus),
     ...(checkOnly || dist.length > 0 ? [] : [`${ANGULAR_DIST} is missing: npm run build`]),
-    ...(checkOnly ? [] : mapsWithoutSources(DISTS.map(path => `${ROOT}${path}`)))
+    ...(checkOnly ? [] : mapsWithoutSources(DISTS.map(path => `${ROOT}${path}`))),
+    ...licensesMissing(`${ROOT}LICENSE`, PACKAGE_FOLDERS.map(folder => `${ROOT}${folder}`)),
+    // ng-packagr copies it with the build
+    ...(dist.length > 0 ? licensesMissing(`${ROOT}LICENSE`, [`${ROOT}${ANGULAR_DIST}`]) : [])
+      .map(problem => `${problem}: npm run build`)
   ];
   problems.forEach(problem => console.error(`${dryRun ? 'Warning' : 'Error'}: ${problem}`));
   if (problems.length > 0 && !dryRun) {

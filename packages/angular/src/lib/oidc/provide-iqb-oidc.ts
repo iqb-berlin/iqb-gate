@@ -46,7 +46,8 @@ async function checkAuthAtStart(): Promise<void> {
 /**
  * Logs the browser in with an OpenID Connect provider, as coding-box does with Keycloak: the code
  * flow with PKCE, the tokens kept in the browser and renewed with the refresh token, the access
- * token on the requests to `apiUrls` -- and only there. At the start of the application the
+ * token on the requests whose URL begins with one of `apiUrls` -- and only there (relative request
+ * URLs are not resolved yet, see `IqbOidcOptions.apiUrls`). At the start of the application the
  * library looks whether the browser just came back from the provider (`?code=&state=`), and takes
  * over the login. The backends check the token (`@iqb/gate-nest`).
  *

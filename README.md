@@ -337,10 +337,17 @@ back from (`?code=&state=`), and starts logged out should the provider fail or n
 10 seconds. The provider sends the browser back to the application's address -- the URL of its base
 (`APP_BASE_HREF`, else `<base href>`), such as `https://host/studio/`, or its origin for `/` -- unless
 `redirectUrl` and `postLogoutRedirectUrl` say otherwise; the provider's client lists that address
-among its redirect URIs and post-logout redirect URIs. Each API URL is a path from the root (`/api/`, not `/` alone, which matches
-`//another.host/` as well) or an http(s) URL, and ends with `/`, so that the token cannot leak to a
-host that only begins alike. The default scope (`openid profile email`) asks for no `offline_access`: Keycloak's
-refresh token then ends with the login session. A provider that hands out a refresh token only for
+among its redirect URIs and post-logout redirect URIs.
+
+Each API URL is a path from the root (`/api/`, not `/` alone, which matches `//another.host/` as
+well) or an http(s) URL, and ends with `/`, so that the token cannot leak to a host that only begins
+alike. A request carries the token when its URL, as the application writes it, begins with one of
+them: written from the root (`/api/units`) or in full. Not yet resolved: a request written relative
+to the base (`api/units`) matches none and goes without the token -- an application below a path
+writes its API requests with that path (`/studio/api/units`) and lists `/studio/api/`.
+
+The default scope (`openid profile email`) asks for no `offline_access`: Keycloak's refresh token
+then ends with the login session. A provider that hands out a refresh token only for
 `offline_access` (Auth0, Microsoft Entra ID) needs it named in `scope`.
 
 When an API refuses the token a request carried, the session is renewed once -- one renewal for all

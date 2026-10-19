@@ -10,7 +10,9 @@ export interface IqbOidcOptions {
    * Requests below these URLs carry the access token; no other request does. Each is a path from
    * the root (`/api/`) or an http(s) URL, and ends with `/`, so that `https://studio.example.org/`
    * cannot match `https://studio.example.org.attacker.net`. `/` alone is refused: it matches
-   * `//attacker.net/`, another host.
+   * `//attacker.net/`, another host. A request's URL is compared as the application writes it, from
+   * the root (`/api/units`) or in full; one relative to the base (`api/units`) matches none and goes
+   * without the token -- not resolved yet.
    */
   apiUrls: string[];
   /**

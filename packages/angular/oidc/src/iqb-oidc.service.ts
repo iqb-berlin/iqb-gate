@@ -4,7 +4,7 @@ import {
   catchError, combineLatest, distinctUntilChanged, finalize, map, type Observable, of, switchMap
 } from 'rxjs';
 import { IQB_OIDC_OPTIONS } from './iqb-oidc-options';
-import { identityOfClaims, type IqbOidcIdentity, sameIdentity } from '../utils/identity-of-claims';
+import { identityOfClaims, type IqbOidcIdentity, sameIdentity } from './identity-of-claims';
 
 /**
  * The login as the application sees it, without the OpenID Connect library's vocabulary: whether

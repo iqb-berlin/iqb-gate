@@ -10,7 +10,7 @@ import { firstValueFrom, timeout } from 'rxjs';
 import { checkApiUrls, IQB_OIDC_OPTIONS, type IqbOidcOptions } from './iqb-oidc-options';
 import { iqbOidcUnauthorizedInterceptor } from './iqb-oidc-unauthorized.interceptor';
 import { IqbOidcLoginGuard } from './iqb-oidc-login-guard';
-import { applicationUrl } from '../utils/application-url';
+import { applicationUrl } from './application-url';
 
 /** Seconds before its expiry a token is renewed, so that no request goes out with an expiring one. */
 const RENEW_BEFORE_EXPIRY_SECONDS = 30;

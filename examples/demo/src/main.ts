@@ -2,9 +2,8 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { provideZonelessChangeDetection } from '@angular/core';
-import {
-  iqbGateInterceptor, iqbOidcInterceptors, provideIqbGate, provideIqbOidc
-} from '@iqb/gate-angular';
+import { iqbGateInterceptor, provideIqbGate } from '@iqb/gate-angular';
+import { iqbOidcInterceptors, provideIqbOidc } from '@iqb/gate-angular/oidc';
 import { AppComponent } from './app/app.component';
 
 bootstrapApplication(AppComponent, {

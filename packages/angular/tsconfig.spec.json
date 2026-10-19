@@ -17,6 +17,7 @@
   },
   "include": [
     "src/**/*.spec.ts",
+    "oidc/src/**/*.spec.ts",
     "src/test-setup.ts",
     "src/**/*.d.ts"
   ]

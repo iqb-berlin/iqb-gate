@@ -128,10 +128,12 @@ listed (TypeORM, GitHub pull requests, board and tickets) does not apply.
   - the migration of old audit files lives in `audit/audit-schema.ts`, not in `AuditLog`;
   - HTML escaping lives in `html.ts`, not in the pages that use it.
 - **Marks**: the same as in studio-lite. A method that uses no `this` is flagged by ESLint
-  (`class-methods-use-this`, for `packages/*/src`).
+  (`class-methods-use-this`, for `packages/*/src` and `packages/angular/oidc/src`).
 - **Where it goes**:
   - **Angular library:** a function without dependencies goes to `src/lib/utils/`, one with
-    injection or state into a service.
+    injection or state into a service; for the entry point `@iqb/gate-angular/oidc`, into
+    `oidc/src/` beside the code that uses it, since the main entry point must not import from there
+    (ESLint, `test/dist-smoke.cjs`).
   - **Gateway:** a module of its own beside the class (`request-path.ts`, `timeouts.ts`); a whole
     area gets its folder (`audit/`, `session/`, `page-gate/`).
   - **A rule two packages must answer alike:** in `@iqb/gate-protocol` if the browser needs it (it
@@ -220,7 +222,7 @@ Studio-lite's i18n rule ("every text through `de.json`") becomes this:
       `page-gate-flow.spec.ts`.
 
     A change to one of them is tested there, by a flow test that fails without it.
-  - In the Angular library, `oidc/session-memory.ts` is covered through the login guard's spec.
+  - In the Angular library, `oidc/src/session-memory.ts` is covered through the login guard's spec.
   - The NestJS guard is tested with a real `FakeProvider` and real tokens (`@iqb/gate-oidc/testing`),
     which is stronger than mocking the verifier.
 

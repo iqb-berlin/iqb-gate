@@ -7,6 +7,6 @@
   "angularCompilerOptions": {
     "compilationMode": "partial"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.spec.ts", "src/test-setup.ts"]
+  "include": ["src/**/*.ts", "oidc/src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "oidc/src/**/*.spec.ts", "src/test-setup.ts"]
 }

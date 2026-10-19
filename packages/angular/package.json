@@ -9,7 +9,7 @@
   "scripts": {
     "prepublishOnly": "node -e \"console.error('Publish packages/angular/dist, not the source: npm run publish:npm'); process.exit(1)\"",
     "build": "ng-packagr -p ng-package.json -c tsconfig.lib.json",
-    "test": "jest",
+    "test": "jest && npm run build && node test/dist-smoke.cjs",
     "typecheck": "tsc -p tsconfig.lib.json --noEmit && tsc -p tsconfig.spec.json --noEmit"
   },
   "peerDependencies": {
@@ -19,6 +19,14 @@
     "@angular/router": ">=20.0.0 <22.0.0",
     "angular-auth-oidc-client": "^22.0.1",
     "rxjs": "^7.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@angular/router": {
+      "optional": true
+    },
+    "angular-auth-oidc-client": {
+      "optional": true
+    }
   },
   "sideEffects": false,
   "dependencies": {

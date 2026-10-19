@@ -1,6 +1,7 @@
 import {
   DOCUMENT, type EnvironmentProviders, inject, makeEnvironmentProviders, provideAppInitializer
 } from '@angular/core';
+import { APP_BASE_HREF } from '@angular/common';
 import {
   authInterceptor, OidcSecurityService, provideAuth, StsConfigLoader, StsConfigStaticLoader
 } from 'angular-auth-oidc-client';
@@ -9,6 +10,7 @@ import { firstValueFrom, timeout } from 'rxjs';
 import { checkApiUrls, IQB_OIDC_OPTIONS, type IqbOidcOptions } from './iqb-oidc-options';
 import { iqbOidcUnauthorizedInterceptor } from './iqb-oidc-unauthorized.interceptor';
 import { IqbOidcLoginGuard } from './iqb-oidc-login-guard';
+import { applicationUrl } from '../utils/application-url';
 
 /** Seconds before its expiry a token is renewed, so that no request goes out with an expiring one. */
 const RENEW_BEFORE_EXPIRY_SECONDS = 30;
@@ -59,14 +61,18 @@ export function provideIqbOidc(options: IqbOidcOptions): EnvironmentProviders {
       loader: {
         provide: StsConfigLoader,
         useFactory: () => {
-          const origin = inject(DOCUMENT).location.origin;
+          // The base the router takes: APP_BASE_HREF, else the href of <base>
+          const document = inject(DOCUMENT);
+          const baseHref = inject(APP_BASE_HREF, { optional: true })
+            ?? document.querySelector('base[href]')?.getAttribute('href') ?? null;
+          const appUrl = applicationUrl(document.location.href, baseHref);
           return new StsConfigStaticLoader({
             authority: options.issuer,
             clientId: options.clientId,
             scope: options.scope ?? DEFAULT_SCOPE,
             responseType: 'code',
-            redirectUrl: options.redirectUrl ?? origin,
-            postLogoutRedirectUri: options.postLogoutRedirectUrl ?? origin,
+            redirectUrl: options.redirectUrl ?? appUrl,
+            postLogoutRedirectUri: options.postLogoutRedirectUrl ?? appUrl,
             silentRenew: true,
             useRefreshToken: true,
             renewTimeBeforeTokenExpiresInSeconds: RENEW_BEFORE_EXPIRY_SECONDS,

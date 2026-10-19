@@ -1,5 +1,6 @@
 import { ApplicationInitStatus } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { APP_BASE_HREF } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { OidcSecurityService, StsConfigLoader } from 'angular-auth-oidc-client';
 import {
@@ -36,6 +37,43 @@ describe('provideIqbOidc', () => {
       redirectUrl: document.location.origin,
       postLogoutRedirectUri: document.location.origin
     }));
+  });
+
+  // An application below a path gets the code there, not at the root of the host
+  it('should send the browser back to the application\'s base by default', async () => {
+    const base = document.createElement('base');
+    base.href = '/studio/';
+    document.head.appendChild(base);
+    try {
+      TestBed.configureTestingModule({ providers: [provideHttpClient(), provideIqbOidc(options)] });
+      const [config] = await firstValueFrom(TestBed.inject(StsConfigLoader).loadConfigs());
+      expect(config.redirectUrl).toBe(`${document.location.origin}/studio/`);
+      expect(config.postLogoutRedirectUri).toBe(`${document.location.origin}/studio/`);
+    } finally {
+      base.remove();
+    }
+  });
+
+  // Without an href, the document's base is the page itself: a deep route would become the address
+  it('should take the origin for a base element without href', async () => {
+    const base = document.createElement('base');
+    base.target = '_self';
+    document.head.appendChild(base);
+    try {
+      TestBed.configureTestingModule({ providers: [provideHttpClient(), provideIqbOidc(options)] });
+      const [config] = await firstValueFrom(TestBed.inject(StsConfigLoader).loadConfigs());
+      expect(config.redirectUrl).toBe(document.location.origin);
+    } finally {
+      base.remove();
+    }
+  });
+
+  it('should take the base the application gives the router instead', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideIqbOidc(options), { provide: APP_BASE_HREF, useValue: '/coding/' }]
+    });
+    const [config] = await firstValueFrom(TestBed.inject(StsConfigLoader).loadConfigs());
+    expect(config.redirectUrl).toBe(`${document.location.origin}/coding/`);
   });
 
   // Otherwise it navigates to '/' after a login and to '/unauthorized' after a failed one, racing the

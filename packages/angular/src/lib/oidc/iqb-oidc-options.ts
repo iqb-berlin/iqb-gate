@@ -18,9 +18,12 @@ export interface IqbOidcOptions {
    * `offline_access` (Auth0, Microsoft Entra ID) needs it named here; Keycloak does not.
    */
   scope?: string;
-  /** Where the provider sends the browser back after the login; the application's origin by default. */
+  /**
+   * Where the provider sends the browser back after the login; by default the application's address:
+   * the URL of its base (`APP_BASE_HREF`, else `<base href>`), its origin for `/`.
+   */
   redirectUrl?: string;
-  /** Where it sends the browser after the logout; the application's origin by default. */
+  /** Where it sends the browser after the logout; the application's address by default, as above. */
   postLogoutRedirectUrl?: string;
 }
 

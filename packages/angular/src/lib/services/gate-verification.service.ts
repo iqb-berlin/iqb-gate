@@ -8,16 +8,14 @@ import {
 } from '../components/gate-verification-dialog/gate-verification-dialog.component';
 
 /**
- * How long a solved challenge answers a 428 without asking again: a write sent before the session
- * was verified -- an upload running beside the save that got the first 428 -- comes back with its
- * own 428 after the dialog closed, and is repeated once instead of asking the person a second time.
- */
-export const RECENTLY_VERIFIED_MS = 30 * 1000;
-
-/**
  * Opens the challenge dialog when the gateway wants proof that a person writes, and only one at a
  * time: a save that runs as several requests gets several 428 answers, and all of them wait for the
  * same dialog. Emits `true` once the session is verified, `false` when the person cancels.
+ *
+ * A request sent before the last solved challenge -- an upload running beside the save that got
+ * the first 428 -- comes back with a 428 the challenge has answered already, and is repeated without
+ * asking again. A 428 for a request sent afterwards is news: the gateway took the verification back
+ * (writes faster than a person, observations a fresh challenge has to answer), and the dialog opens.
  *
  * The dialog is part of the library's bundle -- it is small, and the applications load Material's
  * dialog anyway. What is loaded only when a challenge is due is the ALTCHA widget in it.
@@ -30,8 +28,12 @@ export class GateVerificationService {
   private pending: Observable<boolean> | null = null;
   private verifiedAt: number | null = null;
 
-  verify(): Observable<boolean> {
-    if (this.verifiedAt !== null && Date.now() - this.verifiedAt < RECENTLY_VERIFIED_MS) return of(true);
+  /**
+   * `sentAt`: when the request the gateway answered with 428 was sent, by `performance.now()` -- a
+   * clock that cannot be set back. Without it, the dialog opens.
+   */
+  verify(sentAt?: number): Observable<boolean> {
+    if (sentAt !== undefined && this.verifiedAt !== null && sentAt < this.verifiedAt) return of(true);
     if (!this.pending) {
       this.pending = this.dialog
         .open(GateVerificationDialogComponent, { width: '420px', disableClose: true })
@@ -39,7 +41,7 @@ export class GateVerificationService {
         .pipe(
           map(result => result === true),
           tap(verified => {
-            if (verified) this.verifiedAt = Date.now();
+            if (verified) this.verifiedAt = performance.now();
           }),
           finalize(() => {
             this.pending = null;

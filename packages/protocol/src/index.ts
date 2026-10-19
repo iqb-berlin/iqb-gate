@@ -49,6 +49,9 @@ export const AUTOMATION_DETECTED_STATUS = 403;
 /** The code in the body of that answer. */
 export const AUTOMATION_DETECTED_CODE = 'automation-detected';
 
+/** The codes of the gateway's refusals, in the body and in {@link GATE_REFUSAL_HEADER}. */
+export type GateRejectionCode = typeof HUMAN_VERIFICATION_REQUIRED_CODE | typeof AUTOMATION_DETECTED_CODE;
+
 /**
  * The response header that names the `code` of the gateway's refusal as well -- for answers whose
  * body the browser cannot read as JSON: a HEAD request, a download asked for as a Blob or as text.
@@ -81,7 +84,7 @@ export interface HumanVerificationChallenge {
 export interface GateRejection {
   statusCode: number;
   error: string;
-  code: typeof HUMAN_VERIFICATION_REQUIRED_CODE | typeof AUTOMATION_DETECTED_CODE;
+  code: GateRejectionCode;
   message: string;
   /** For `automation-detected`: the observations that rejected the request. */
   signals?: string[];

@@ -8,7 +8,7 @@ import {
   EnvironmentInjector, type EnvironmentProviders, type Provider, runInInjectionContext
 } from '@angular/core';
 import {
-  firstValueFrom, type Observable, of, throwError
+  firstValueFrom, type Observable, of, Subject, throwError
 } from 'rxjs';
 import { type ClientSignals, CLIENT_SIGNALS_HEADER, GATE_REFUSAL_HEADER } from '@iqb/gate-protocol';
 import { iqbGateInterceptor, IqbGateInterceptor } from './iqb-gate.interceptor';
@@ -129,6 +129,29 @@ describe('iqbGateInterceptor', () => {
 
     expect(await intercept(new HttpRequest('GET', '/api/x'), next)).toBe(saved);
     expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  // The 428 of a request sent before the last solved challenge is answered by it already
+  it('should tell the challenge when the refused request was sent, not when its 428 came', async () => {
+    jest.useFakeTimers();
+    try {
+      verification.verify.mockReturnValue(of(true));
+      const answers = [new Subject<HttpResponse<unknown>>(), new Subject<HttpResponse<unknown>>()];
+      let calls = 0;
+      const next = jest.fn((_request: HttpRequest<unknown>): Observable<HttpResponse<unknown>> => {
+        calls += 1;
+        return answers[calls - 1];
+      });
+      const sent = performance.now();
+      const answer = intercept(new HttpRequest('POST', '/api/x', {}), next);
+      jest.advanceTimersByTime(4000);
+      answers[0].error(required);
+      answers[1].next(saved);
+      expect(await answer).toBe(saved);
+      expect(verification.verify).toHaveBeenCalledWith(sent);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   // A burst of requests right after the challenge: the gateway asks again, and the person is told

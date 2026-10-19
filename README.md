@@ -297,9 +297,9 @@ containers, and route every path of the host through the gateway.
 ## In an Angular application
 
 `@iqb/gate-angular` sends the browser's report with every request to its own origin and, when the
-gateway answers 428, shows the ALTCHA challenge in a Material dialog and repeats the request. When the
-gateway refuses the browser as automated, or asks again right after a solved challenge, a dialog of
-its own says so (`GateRefusalNoticeService`, one for all requests refused at once); a challenge the
+gateway answers 428, shows the ALTCHA challenge in a Material dialog and repeats the request -- a
+request sent before the challenge was solved is repeated without asking again. When the gateway
+refuses the browser as automated, or asks again for the repeated request, a dialog of its own says so (`GateRefusalNoticeService`, one for all requests refused at once); a challenge the
 person cancelled is not announced. It is built with Angular 20 in partial compilation, so Angular 20
 and 21 applications can use it.
 

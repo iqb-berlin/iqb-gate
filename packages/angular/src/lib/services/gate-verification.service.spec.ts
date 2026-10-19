@@ -2,7 +2,7 @@ import { createMock } from '@golevelup/ts-jest';
 import { TestBed } from '@angular/core/testing';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { Subject } from 'rxjs';
-import { GateVerificationService, RECENTLY_VERIFIED_MS } from './gate-verification.service';
+import { GateVerificationService } from './gate-verification.service';
 import {
   GateVerificationDialogComponent
 } from '../components/gate-verification-dialog/gate-verification-dialog.component';
@@ -28,6 +28,8 @@ describe('GateVerificationService', () => {
     });
     service = TestBed.inject(GateVerificationService);
   });
+
+  afterEach(() => jest.useRealTimers());
 
   /** Closes the open dialog with the given result. */
   const close = (result: boolean): void => {
@@ -75,23 +77,40 @@ describe('GateVerificationService', () => {
   });
 
   // An upload sent beside the save that got the first 428 comes back with its own 428 afterwards
-  it('should answer a 428 right after a solved challenge without asking again', () => {
-    jest.useFakeTimers({ now: 0 });
-    service.verify().subscribe();
+  it('should answer the 428 of a request sent before the solved challenge without asking again', () => {
+    jest.useFakeTimers();
+    const sent = performance.now();
+    service.verify(sent).subscribe();
+    jest.advanceTimersByTime(4000);
     close(true);
 
     const results: boolean[] = [];
-    jest.setSystemTime(RECENTLY_VERIFIED_MS - 1);
-    service.verify().subscribe(result => results.push(result));
+    service.verify(sent).subscribe(result => results.push(result));
 
     expect(results).toEqual([true]);
     expect(dialog.open).toHaveBeenCalledTimes(1);
+  });
+
+  // The gateway took the verification back: a save faster than a person, right after the challenge
+  it('should ask again for a request sent after the solved challenge, however soon', () => {
+    jest.useFakeTimers();
+    service.verify(performance.now()).subscribe();
+    jest.advanceTimersByTime(4000);
+    close(true);
 
     closed = new Subject<boolean | undefined>();
-    jest.setSystemTime(RECENTLY_VERIFIED_MS);
+    jest.advanceTimersByTime(1);
+    service.verify(performance.now()).subscribe();
+    expect(dialog.open).toHaveBeenCalledTimes(2);
+  });
+
+  it('should ask when it is not told when the request was sent', () => {
+    service.verify().subscribe();
+    close(true);
+
+    closed = new Subject<boolean | undefined>();
     service.verify().subscribe();
     expect(dialog.open).toHaveBeenCalledTimes(2);
-    jest.useRealTimers();
   });
 
   it('should not count a cancelled dialog as solved', () => {

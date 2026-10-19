@@ -3,6 +3,7 @@ import {
   AUTOMATION_DETECTED_CODE,
   AUTOMATION_DETECTED_STATUS,
   GATE_REFUSAL_HEADER,
+  type GateRejectionCode,
   HUMAN_VERIFICATION_REQUIRED_CODE,
   HUMAN_VERIFICATION_REQUIRED_STATUS
 } from '@iqb/gate-protocol';
@@ -35,7 +36,7 @@ export function isVerificationRequired(error: unknown): boolean {
  * names it for an answer whose body cannot be read -- none for HEAD, a Blob, text or an
  * ArrayBuffer for a download.
  */
-function isGateAnswer(error: unknown, status: number, code: string): boolean {
+function isGateAnswer(error: unknown, status: number, code: GateRejectionCode): boolean {
   if (!(error instanceof HttpErrorResponse) || error.status !== status) return false;
   const body: unknown = error.error;
   const json = typeof body === 'object' && body !== null && !(body instanceof Blob) && !(body instanceof ArrayBuffer);

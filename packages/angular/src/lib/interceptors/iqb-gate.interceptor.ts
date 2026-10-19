@@ -34,7 +34,7 @@ function isGatedRequest(url: string, document: Document): boolean {
  * of them it checks). Every request to the page's own origin carries what the browser observed about
  * itself and its input. When the gateway answers 428, the challenge dialog opens, and the request is
  * sent again once it is solved; cancelled, the request fails with its 428 -- the person knows why.
- * When the gateway refuses the browser as automated, or asks again right after a solved challenge,
+ * When the gateway refuses the browser as automated, or asks again for the repeated request,
  * a notice says so (`GateRefusalNoticeService`) and the request fails: an application leaves such
  * errors out of its own display (`isGateRefusal`).
  *
@@ -59,10 +59,12 @@ export const iqbGateInterceptor: HttpInterceptorFn = (
     if (refusal) injector.get(GateRefusalNoticeService).show(refusal);
     return throwError(() => error);
   };
+  // A 428 for a request sent before the last solved challenge is answered by it already
+  const sentAt = performance.now();
   return next(withSignals()).pipe(
     catchError((error: unknown) => {
       if (!isVerificationRequired(error)) return refused(error);
-      return injector.get(GateVerificationService).verify().pipe(
+      return injector.get(GateVerificationService).verify(sentAt).pipe(
         switchMap(verified => (verified ? next(withSignals()).pipe(catchError(refused)) : throwError(() => error)))
       );
     })

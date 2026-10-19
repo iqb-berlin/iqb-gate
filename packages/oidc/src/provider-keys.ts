@@ -44,16 +44,22 @@ export class ProviderKeys {
 
   /** The key for a token's header, as `jwtVerify` asks for it. */
   readonly getKey: JWTVerifyGetKey = async (header, token) => {
-    const fetchedBefore = this.fetchedAt;
+    const keysBefore = this.keys;
     const keys = await this.current();
     try {
       return await keys(header, token);
     } catch (error) {
+      if (!(error instanceof errors.JWKSNoMatchingKey)) throw error;
+      // The fetch of another token with the same new key id, under way or done since, brings the key
+      if (this.pending) await this.pending.catch(() => {});
+      if (this.keys && this.keys !== keys) return this.keys(header, token);
       // A key id not known yet: the provider may have added a key since the last fetch -- a routine
       // one too, as it may sign with a new key at once. Not when the keys were just fetched for this
       // token, nor while a failed fetch stands: that would send no request, only use up the pause.
-      if (!(error instanceof errors.JWKSNoMatchingKey) || this.fetchedAt !== fetchedBefore) throw error;
-      if (this.failing() || Date.now() - this.keyIdFetchedAt < RETRY_PAUSE_MS) throw error;
+      if (keys !== keysBefore || this.failing()) throw error;
+      if (Date.now() - this.keyIdFetchedAt < RETRY_PAUSE_MS) throw error;
+      // Nothing is awaited between the check of `pending` above and this fetch when nothing was
+      // pending: the first of several tokens with a new key id starts it, the others find it pending
       this.keyIdFetchedAt = Date.now();
       // A provider that cannot be asked leaves the key unknown -- the token's fault, not an outage
       await this.refresh().catch(() => {
@@ -88,7 +94,7 @@ export class ProviderKeys {
 
   /** Fetches the keys, once for all who ask at the same time; a failure stands for {@link RETRY_PAUSE_MS}. */
   private refresh(): Promise<void> {
-    if (this.failure && this.failing()) return Promise.reject(this.failure);
+    if (this.failing()) return Promise.reject(this.failure);
     this.pending ??= this.fetchKeys().finally(() => {
       this.pending = null;
     });

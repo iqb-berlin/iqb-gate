@@ -134,6 +134,27 @@ describe('ProviderKeys', () => {
       expect(provider.jwksFetches - before).toBe(2);
     });
 
+  // The first requests after a rotation run side by side
+  it('lets tokens with the same new key id at the same time share one fetch, and holds them all', async () => {
+    await check();
+    await provider.addKey('key-together');
+    const before = provider.jwksFetches;
+    await expect(Promise.all([check('key-together'), check('key-together'), check('key-together')]))
+      .resolves.toHaveLength(3);
+    expect(provider.jwksFetches - before).toBe(1);
+  });
+
+  it('lets tokens with the same new key id wait for one failed fetch, not send one each', async () => {
+    await check();
+    await provider.addKey('key-while-down');
+    provider.keysAnswer = 503;
+    later(31 * 1000);
+    const before = provider.jwksFetches;
+    const checks = await Promise.allSettled([1, 2, 3].map(() => check('key-while-down')));
+    expect(checks.map(result => result.status)).toEqual(['rejected', 'rejected', 'rejected']);
+    expect(provider.jwksFetches - before).toBe(1);
+  });
+
   it('does not fetch again for a key id the keys just fetched for the same token do not know', async () => {
     await provider.addKey('key-unpublished');
     provider.removeKey('key-unpublished');

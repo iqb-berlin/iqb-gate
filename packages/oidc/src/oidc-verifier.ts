@@ -28,8 +28,9 @@ export interface OidcVerifierOptions {
   onRejected?: (reason: string, error?: unknown) => void;
   /**
    * Told when the provider cannot be asked -- unreachable, or configured wrongly: then no token
-   * holds, and someone has to look. For a warning in the log: told once for each attempt to ask the
-   * provider that failed, not for each token refused while the failure stands.
+   * holds, and someone has to look. For a warning in the log: told when an attempt to ask the
+   * provider fails, a reason told already at most once in {@link RETRY_PAUSE_MS} -- not for each
+   * token refused while the failure stands.
    */
   onUnavailable?: (reason: string, error?: unknown) => void;
   /**
@@ -150,8 +151,8 @@ export class OidcVerifier {
   }
 
   /**
-   * Tells of a failure once for each attempt to ask the provider: a failed attempt stands for
-   * {@link RETRY_PAUSE_MS}, and every token in that time meets the same reason.
+   * Tells of a failure, the same reason at most once in {@link RETRY_PAUSE_MS}: a failed attempt to ask
+   * the provider stands that long, and every token in that time meets its reason.
    */
   private reportUnavailable(reason: string, error: ProviderUnavailable): void {
     if (reason === this.reported.reason && Date.now() - this.reported.at < RETRY_PAUSE_MS) return;
